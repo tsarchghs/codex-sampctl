@@ -8,8 +8,14 @@
 #define MYSQL_DB   "samp"
 #define MYSQL_PORT 3306
 
-#define DIALOG_LOGIN    1
-#define DIALOG_REGISTER 2
+#define DIALOG_LOGIN          1
+#define DIALOG_REGISTER       2
+#define DIALOG_INVENTORY      3
+#define DIALOG_ITEM_ACTIONS   4
+#define DIALOG_ITEM_AMOUNT    5
+#define DIALOG_ITEM_GIVE      6
+#define DIALOG_VEHICLE_ITEMS  7
+#define DIALOG_VEHICLE_AMOUNT 8
 
 #define PASSWORD_LEN 64
 
@@ -17,6 +23,10 @@
 #define PREVIEW_Y 1343.1572
 #define PREVIEW_Z 15.3746
 #define PREVIEW_A 270.0
+
+#define MAX_ITEMS 12
+#define MAX_DROPS 100
+#define MAX_ITEM_NAME 24
 
 new const gSkinList[] =
 {
@@ -30,6 +40,8 @@ enum pInfo
 	bool:pLogged,
 	bool:pRegistering,
 	pSkin,
+	pSelectedItem,
+	pSelectedAction,
 	Float:pX,
 	Float:pY,
 	Float:pZ,
@@ -44,11 +56,385 @@ new MySQL:g_SQL;
 
 forward OnAccountCheck(playerid);
 
+enum itemInfo
+{
+	itemName[MAX_ITEM_NAME],
+	bool:itemConsumable
+};
+
+new const gItems[MAX_ITEMS][itemInfo] =
+{
+	{"Water Bottle", true},
+	{"Sandwich", true},
+	{"Bandage", true},
+	{"Medkit", true},
+	{"Phone", false},
+	{"Radio", false},
+	{"Flashlight", false},
+	{"Repair Kit", false},
+	{"Lockpick", false},
+	{"Notebook", false},
+	{"Pistol Ammo", false},
+	{"Rope", false}
+};
+
+new PlayerItems[MAX_PLAYERS][MAX_ITEMS];
+new VehicleItems[MAX_VEHICLES][MAX_ITEMS];
+
+enum dropInfo
+{
+	bool:dropActive,
+	dropItemId,
+	dropAmount,
+	dropPickupId,
+	Float:dropX,
+	Float:dropY,
+	Float:dropZ,
+	dropInterior,
+	dropWorld
+};
+
+new Drops[MAX_DROPS][dropInfo];
+
+enum invAction
+{
+	ACTION_NONE,
+	ACTION_USE,
+	ACTION_DROP,
+	ACTION_DELETE,
+	ACTION_GIVE,
+	ACTION_VEH_TAKE
+};
+
+stock GetItemName(itemid, name[], size = MAX_ITEM_NAME)
+{
+	if (itemid < 0 || itemid >= MAX_ITEMS)
+	{
+		format(name, size, "Unknown");
+		return 0;
+	}
+	format(name, size, "%s", gItems[itemid][itemName]);
+	return 1;
+}
+
+stock IsValidItem(itemid)
+{
+	return (itemid >= 0 && itemid < MAX_ITEMS);
+}
+
+stock AddPlayerItem(playerid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	PlayerItems[playerid][itemid] += amount;
+	return 1;
+}
+
+stock RemovePlayerItem(playerid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	if (PlayerItems[playerid][itemid] < amount)
+	{
+		return 0;
+	}
+	PlayerItems[playerid][itemid] -= amount;
+	return 1;
+}
+
+stock AddVehicleItem(vehicleid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	VehicleItems[vehicleid][itemid] += amount;
+	return 1;
+}
+
+stock RemoveVehicleItem(vehicleid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	if (VehicleItems[vehicleid][itemid] < amount)
+	{
+		return 0;
+	}
+	VehicleItems[vehicleid][itemid] -= amount;
+	return 1;
+}
+
+stock GetNearestActiveDrop(playerid, Float:range = 2.0)
+{
+	new interior = GetPlayerInterior(playerid);
+	new world = GetPlayerVirtualWorld(playerid);
+	for (new i = 0; i < MAX_DROPS; i++)
+	{
+		if (!Drops[i][dropActive])
+		{
+			continue;
+		}
+		if (Drops[i][dropInterior] != interior || Drops[i][dropWorld] != world)
+		{
+			continue;
+		}
+
+		if (GetPlayerDistanceFromPoint(playerid, Drops[i][dropX], Drops[i][dropY], Drops[i][dropZ]) <= range)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+stock CreateDrop(playerid, itemid, amount)
+{
+	for (new i = 0; i < MAX_DROPS; i++)
+	{
+		if (Drops[i][dropActive])
+		{
+			continue;
+		}
+
+		new Float:px, Float:py, Float:pz;
+		GetPlayerPos(playerid, px, py, pz);
+
+		Drops[i][dropActive] = true;
+		Drops[i][dropItemId] = itemid;
+		Drops[i][dropAmount] = amount;
+		Drops[i][dropInterior] = GetPlayerInterior(playerid);
+		Drops[i][dropWorld] = GetPlayerVirtualWorld(playerid);
+		Drops[i][dropX] = px;
+		Drops[i][dropY] = py;
+		Drops[i][dropZ] = pz;
+		Drops[i][dropPickupId] = CreatePickup(1273, 1, px, py, pz, Drops[i][dropWorld]);
+		return i;
+	}
+	return -1;
+}
+
+stock ClearDrop(dropid)
+{
+	if (dropid < 0 || dropid >= MAX_DROPS)
+	{
+		return 0;
+	}
+	if (!Drops[dropid][dropActive])
+	{
+		return 0;
+	}
+	DestroyPickup(Drops[dropid][dropPickupId]);
+	Drops[dropid][dropActive] = false;
+	Drops[dropid][dropItemId] = 0;
+	Drops[dropid][dropAmount] = 0;
+	Drops[dropid][dropPickupId] = -1;
+	Drops[dropid][dropX] = 0.0;
+	Drops[dropid][dropY] = 0.0;
+	Drops[dropid][dropZ] = 0.0;
+	Drops[dropid][dropInterior] = 0;
+	Drops[dropid][dropWorld] = 0;
+	return 1;
+}
+
+stock strtok(const string[], &index)
+{
+	new length = strlen(string);
+	while ((index < length) && (string[index] <= ' '))
+	{
+		index++;
+	}
+	new offset = index;
+	new result[64];
+	while ((index < length) && (string[index] > ' ') && ((index - offset) < sizeof(result) - 1))
+	{
+		result[index - offset] = string[index];
+		index++;
+	}
+	result[index - offset] = EOS;
+	return result;
+}
+
+stock GetTargetPlayerId(const name[])
+{
+	new playerid = INVALID_PLAYER_ID;
+	if (!strlen(name))
+	{
+		return playerid;
+	}
+	playerid = strval(name);
+	if (IsPlayerConnected(playerid))
+	{
+		return playerid;
+	}
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i))
+		{
+			continue;
+		}
+		new playerName[MAX_PLAYER_NAME];
+		GetPlayerName(i, playerName, sizeof(playerName));
+		if (!strcmp(playerName, name, true))
+		{
+			return i;
+		}
+	}
+	return INVALID_PLAYER_ID;
+}
+
+stock SendInventoryList(playerid, targetid, const title[])
+{
+	new message[128];
+	format(message, sizeof(message), "%s", title);
+	SendClientMessage(targetid, -1, message);
+
+	new itemName[MAX_ITEM_NAME];
+	new bool:hasItems = false;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1)
+		{
+			continue;
+		}
+		hasItems = true;
+		GetItemName(i, itemName, sizeof(itemName));
+		format(message, sizeof(message), "  [%d] %s x%d", i, itemName, PlayerItems[playerid][i]);
+		SendClientMessage(targetid, -1, message);
+	}
+	if (!hasItems)
+	{
+		SendClientMessage(targetid, -1, "  (no items)");
+	}
+	return 1;
+}
+
+stock SendVehicleInventoryList(playerid, vehicleid, const title[])
+{
+	new message[128];
+	format(message, sizeof(message), "%s", title);
+	SendClientMessage(playerid, -1, message);
+
+	new itemName[MAX_ITEM_NAME];
+	new bool:hasItems = false;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1)
+		{
+			continue;
+		}
+		hasItems = true;
+		GetItemName(i, itemName, sizeof(itemName));
+		format(message, sizeof(message), "  [%d] %s x%d", i, itemName, VehicleItems[vehicleid][i]);
+		SendClientMessage(playerid, -1, message);
+	}
+	if (!hasItems)
+	{
+		SendClientMessage(playerid, -1, "  (empty)");
+	}
+	return 1;
+}
+
+stock GetItemIdFromList(playerid, listitem)
+{
+	new idx = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1)
+		{
+			continue;
+		}
+		if (idx == listitem)
+		{
+			return i;
+		}
+		idx++;
+	}
+	return -1;
+}
+
+stock GetVehicleItemIdFromList(vehicleid, listitem)
+{
+	new idx = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1)
+		{
+			continue;
+		}
+		if (idx == listitem)
+		{
+			return i;
+		}
+		idx++;
+	}
+	return -1;
+}
+
+stock ShowInventoryDialog(playerid)
+{
+	new list[768];
+	list[0] = EOS;
+	new itemName[MAX_ITEM_NAME];
+	new hasItems = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1)
+		{
+			continue;
+		}
+		hasItems = 1;
+		GetItemName(i, itemName, sizeof(itemName));
+		new line[64];
+		format(line, sizeof(line), "%s x%d\n", itemName, PlayerItems[playerid][i]);
+		strcat(list, line);
+	}
+	if (!hasItems)
+	{
+		strcat(list, "(no items)\n");
+	}
+	ShowPlayerDialog(playerid, DIALOG_INVENTORY, DIALOG_STYLE_LIST, "Inventory", list, "Select", "Close");
+	return 1;
+}
+
+stock ShowVehicleItemsDialog(playerid, vehicleid)
+{
+	new list[768];
+	list[0] = EOS;
+	new itemName[MAX_ITEM_NAME];
+	new hasItems = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1)
+		{
+			continue;
+		}
+		hasItems = 1;
+		GetItemName(i, itemName, sizeof(itemName));
+		new line[64];
+		format(line, sizeof(line), "%s x%d\n", itemName, VehicleItems[vehicleid][i]);
+		strcat(list, line);
+	}
+	if (!hasItems)
+	{
+		strcat(list, "(empty)\n");
+	}
+	ShowPlayerDialog(playerid, DIALOG_VEHICLE_ITEMS, DIALOG_STYLE_LIST, "Vehicle Inventory", list, "Take", "Close");
+	return 1;
+}
+
 stock ResetPlayerData(playerid)
 {
 	PlayerData[playerid][pLogged] = false;
 	PlayerData[playerid][pRegistering] = false;
 	PlayerData[playerid][pSkin] = 0;
+	PlayerData[playerid][pSelectedItem] = -1;
+	PlayerData[playerid][pSelectedAction] = ACTION_NONE;
 	PlayerData[playerid][pX] = PREVIEW_X;
 	PlayerData[playerid][pY] = PREVIEW_Y;
 	PlayerData[playerid][pZ] = PREVIEW_Z;
@@ -56,6 +442,10 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		PlayerItems[playerid][i] = 0;
+	}
 	return 1;
 }
 
@@ -131,6 +521,11 @@ public OnGameModeInit()
 {
 	SetGameModeText("MySQL Accounts");
 	UsePlayerPedAnims();
+	for (new i = 0; i < MAX_DROPS; i++)
+	{
+		Drops[i][dropActive] = false;
+		Drops[i][dropPickupId] = -1;
+	}
 
 	for (new i = 0; i < sizeof(gSkinList); i++)
 	{
@@ -194,6 +589,34 @@ public OnPlayerDisconnect(playerid, reason)
 		SavePlayerPosition(playerid);
 	}
 	ResetPlayerData(playerid);
+	return 1;
+}
+
+public OnPlayerSpawn(playerid)
+{
+	AddPlayerItem(playerid, 0, 2);
+	AddPlayerItem(playerid, 1, 1);
+	AddPlayerItem(playerid, 4, 1);
+	SendClientMessage(playerid, -1, "Use /inv (or /inventory) to view items. Press Y to pick up drops.");
+	return 1;
+}
+
+public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
+{
+	if (newkeys & KEY_YES)
+	{
+		new dropid = GetNearestActiveDrop(playerid);
+		if (dropid != -1)
+		{
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(Drops[dropid][dropItemId], itemName, sizeof(itemName));
+			AddPlayerItem(playerid, Drops[dropid][dropItemId], Drops[dropid][dropAmount]);
+			new message[96];
+			format(message, sizeof(message), "You picked up %s x%d.", itemName, Drops[dropid][dropAmount]);
+			SendClientMessage(playerid, -1, message);
+			ClearDrop(dropid);
+		}
+	}
 	return 1;
 }
 
@@ -292,6 +715,240 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		return 1;
 	}
 
+	if (dialogid == DIALOG_INVENTORY)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		new itemid = GetItemIdFromList(playerid, listitem);
+		if (!IsValidItem(itemid))
+		{
+			return 1;
+		}
+
+		PlayerData[playerid][pSelectedItem] = itemid;
+		new options[96];
+		if (gItems[itemid][itemConsumable])
+		{
+			format(options, sizeof(options), "Use\nDrop\nGive\nDelete");
+		}
+		else
+		{
+			format(options, sizeof(options), "Drop\nGive\nDelete");
+		}
+		ShowPlayerDialog(playerid, DIALOG_ITEM_ACTIONS, DIALOG_STYLE_LIST, "Item Actions", options, "Select", "Back");
+		return 1;
+	}
+
+	if (dialogid == DIALOG_ITEM_ACTIONS)
+	{
+		if (!response)
+		{
+			ShowInventoryDialog(playerid);
+			return 1;
+		}
+
+		new itemid = PlayerData[playerid][pSelectedItem];
+		if (!IsValidItem(itemid))
+		{
+			return 1;
+		}
+
+		new action = ACTION_NONE;
+		if (gItems[itemid][itemConsumable])
+		{
+			if (listitem == 0) action = ACTION_USE;
+			else if (listitem == 1) action = ACTION_DROP;
+			else if (listitem == 2) action = ACTION_GIVE;
+			else if (listitem == 3) action = ACTION_DELETE;
+		}
+		else
+		{
+			if (listitem == 0) action = ACTION_DROP;
+			else if (listitem == 1) action = ACTION_GIVE;
+			else if (listitem == 2) action = ACTION_DELETE;
+		}
+
+		PlayerData[playerid][pSelectedAction] = action;
+		if (action == ACTION_USE)
+		{
+			if (!RemovePlayerItem(playerid, itemid, 1))
+			{
+				SendClientMessage(playerid, -1, "You do not have that item.");
+				return 1;
+			}
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new message[96];
+			format(message, sizeof(message), "You used %s.", itemName);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+
+		if (action == ACTION_GIVE)
+		{
+			ShowPlayerDialog(playerid, DIALOG_ITEM_GIVE, DIALOG_STYLE_INPUT, "Give Item", "Enter <player> <amount>:", "Give", "Cancel");
+			return 1;
+		}
+
+		if (action == ACTION_DROP || action == ACTION_DELETE)
+		{
+			ShowPlayerDialog(playerid, DIALOG_ITEM_AMOUNT, DIALOG_STYLE_INPUT, "Item Amount", "Enter amount:", "OK", "Cancel");
+			return 1;
+		}
+	}
+
+	if (dialogid == DIALOG_ITEM_AMOUNT)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		new amount = strval(inputtext);
+		new itemid = PlayerData[playerid][pSelectedItem];
+		new action = PlayerData[playerid][pSelectedAction];
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Invalid amount.");
+			return 1;
+		}
+
+		if (action == ACTION_DROP)
+		{
+			if (!RemovePlayerItem(playerid, itemid, amount))
+			{
+				SendClientMessage(playerid, -1, "You do not have enough of that item.");
+				return 1;
+			}
+
+			new dropid = CreateDrop(playerid, itemid, amount);
+			if (dropid == -1)
+			{
+				AddPlayerItem(playerid, itemid, amount);
+				SendClientMessage(playerid, -1, "No space to drop items right now.");
+				return 1;
+			}
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new message[96];
+			format(message, sizeof(message), "Dropped %s x%d. Press Y to pick up.", itemName, amount);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+
+		if (action == ACTION_DELETE)
+		{
+			if (!RemovePlayerItem(playerid, itemid, amount))
+			{
+				SendClientMessage(playerid, -1, "You do not have enough of that item.");
+				return 1;
+			}
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new message[96];
+			format(message, sizeof(message), "Deleted %s x%d.", itemName, amount);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+	}
+
+	if (dialogid == DIALOG_ITEM_GIVE)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		new idx;
+		new targetArg[64];
+		targetArg = strtok(inputtext, idx);
+		new amountArg[64];
+		amountArg = strtok(inputtext, idx);
+
+		new targetid = GetTargetPlayerId(targetArg);
+		new amount = strval(amountArg);
+		new itemid = PlayerData[playerid][pSelectedItem];
+
+		if (targetid == INVALID_PLAYER_ID || amount < 1 || !IsValidItem(itemid))
+		{
+			SendClientMessage(playerid, -1, "Usage: <player> <amount>");
+			return 1;
+		}
+
+		if (!RemovePlayerItem(playerid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			return 1;
+		}
+
+		AddPlayerItem(targetid, itemid, amount);
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "You gave %s x%d.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+
+		format(message, sizeof(message), "You received %s x%d.", itemName, amount);
+		SendClientMessage(targetid, -1, message);
+		return 1;
+	}
+
+	if (dialogid == DIALOG_VEHICLE_ITEMS)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		new itemid = GetVehicleItemIdFromList(vehicleid, listitem);
+		if (!IsValidItem(itemid))
+		{
+			return 1;
+		}
+		PlayerData[playerid][pSelectedItem] = itemid;
+		PlayerData[playerid][pSelectedAction] = ACTION_VEH_TAKE;
+		ShowPlayerDialog(playerid, DIALOG_VEHICLE_AMOUNT, DIALOG_STYLE_INPUT, "Take Item", "Enter amount:", "Take", "Cancel");
+		return 1;
+	}
+
+	if (dialogid == DIALOG_VEHICLE_AMOUNT)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		new amount = strval(inputtext);
+		new itemid = PlayerData[playerid][pSelectedItem];
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Invalid amount.");
+			return 1;
+		}
+		if (!RemoveVehicleItem(vehicleid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "That item is not available in the vehicle.");
+			return 1;
+		}
+		AddPlayerItem(playerid, itemid, amount);
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Took %s x%d from the vehicle.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
 	return 0;
 }
 
@@ -322,4 +979,331 @@ public OnAccountCheck(playerid)
 		ShowRegisterDialog(playerid);
 	}
 	return 1;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	new idx;
+	new cmd[64];
+	cmd = strtok(cmdtext, idx);
+
+	if (!strlen(cmd))
+	{
+		return 0;
+	}
+
+	if (!strcmp(cmd, "/myitems", true) || !strcmp(cmd, "/inv", true) || !strcmp(cmd, "/items", true) || !strcmp(cmd, "/inventory", true) || !strcmp(cmd, "/i", true))
+	{
+		ShowInventoryDialog(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/showitems", true))
+	{
+		new targetArg[64];
+		targetArg = strtok(cmdtext, idx);
+		new targetid = GetTargetPlayerId(targetArg);
+		if (targetid == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "Usage: /showitems <player>");
+			return 1;
+		}
+		new name[MAX_PLAYER_NAME];
+		GetPlayerName(playerid, name, sizeof(name));
+		new title[96];
+		format(title, sizeof(title), "%s shows you their items:", name);
+		SendInventoryList(playerid, targetid, title);
+		SendClientMessage(playerid, -1, "You showed your items.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/giveitem", true))
+	{
+		new targetArg[64];
+		targetArg = strtok(cmdtext, idx);
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+
+		new targetid = GetTargetPlayerId(targetArg);
+		new itemid = strval(itemArg);
+		new amount = strval(amountArg);
+
+		if (targetid == INVALID_PLAYER_ID || !IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /giveitem <player> <itemid> <amount>");
+			return 1;
+		}
+
+		if (!RemovePlayerItem(playerid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			return 1;
+		}
+
+		AddPlayerItem(targetid, itemid, amount);
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+
+		new message[96];
+		format(message, sizeof(message), "You gave %s x%d.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+
+		format(message, sizeof(message), "You received %s x%d.", itemName, amount);
+		SendClientMessage(targetid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/useitem", true))
+	{
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+
+		new itemid = -1;
+		if (strlen(itemArg))
+		{
+			itemid = strval(itemArg);
+		}
+		else
+		{
+			for (new i = 0; i < MAX_ITEMS; i++)
+			{
+				if (PlayerItems[playerid][i] > 0 && gItems[i][itemConsumable])
+				{
+					itemid = i;
+					break;
+				}
+			}
+		}
+
+		if (!IsValidItem(itemid))
+		{
+			SendClientMessage(playerid, -1, "Usage: /useitem <itemid>");
+			return 1;
+		}
+
+		if (!gItems[itemid][itemConsumable])
+		{
+			SendClientMessage(playerid, -1, "That item cannot be consumed.");
+			return 1;
+		}
+
+		if (!RemovePlayerItem(playerid, itemid, 1))
+		{
+			SendClientMessage(playerid, -1, "You do not have that item.");
+			return 1;
+		}
+
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "You used %s.", itemName);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/deleteitem", true))
+	{
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+
+		new itemid = strval(itemArg);
+		new amount = strval(amountArg);
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /deleteitem <itemid> <amount>");
+			return 1;
+		}
+		if (!RemovePlayerItem(playerid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			return 1;
+		}
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Deleted %s x%d.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/dropitem", true))
+	{
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+
+		new itemid = strval(itemArg);
+		new amount = strval(amountArg);
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /dropitem <itemid> <amount>");
+			return 1;
+		}
+		if (!RemovePlayerItem(playerid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			return 1;
+		}
+
+		new dropid = CreateDrop(playerid, itemid, amount);
+		if (dropid == -1)
+		{
+			AddPlayerItem(playerid, itemid, amount);
+			SendClientMessage(playerid, -1, "No space to drop items right now.");
+			return 1;
+		}
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Dropped %s x%d. Press Y to pick up.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vehmenu", true) || !strcmp(cmd, "/vmenu", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		ShowVehicleItemsDialog(playerid, vehicleid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/trunk", true))
+	{
+		SendClientMessage(playerid, -1, "You open the trunk. Use /vehitems to manage vehicle inventory.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vehitems", true) || !strcmp(cmd, "/vinv", true) || !strcmp(cmd, "/vitems", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		SendVehicleInventoryList(playerid, vehicleid, "Vehicle inventory:");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vtitem", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+
+		new itemid = strval(itemArg);
+		new amount = strlen(amountArg) ? strval(amountArg) : 1;
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /vtitem <itemid> (<amount>)");
+			return 1;
+		}
+		if (!RemoveVehicleItem(vehicleid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "That item is not available in the vehicle.");
+			return 1;
+		}
+		AddPlayerItem(playerid, itemid, amount);
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Took %s x%d from the vehicle.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vpitem", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		new itemArg[64];
+		itemArg = strtok(cmdtext, idx);
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+
+		new itemid = strval(itemArg);
+		new amount = strlen(amountArg) ? strval(amountArg) : 1;
+		if (!IsValidItem(itemid) || amount < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /vpitem <itemid> (<amount>)");
+			return 1;
+		}
+		if (!RemovePlayerItem(playerid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			return 1;
+		}
+		AddVehicleItem(vehicleid, itemid, amount);
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Placed %s x%d into the vehicle.", itemName, amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vtitems", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		for (new i = 0; i < MAX_ITEMS; i++)
+		{
+			if (VehicleItems[vehicleid][i] < 1)
+			{
+				continue;
+			}
+			AddPlayerItem(playerid, i, VehicleItems[vehicleid][i]);
+			VehicleItems[vehicleid][i] = 0;
+		}
+		SendClientMessage(playerid, -1, "You took all items from the vehicle.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vpitems", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			return 1;
+		}
+		for (new i = 0; i < MAX_ITEMS; i++)
+		{
+			if (PlayerItems[playerid][i] < 1)
+			{
+				continue;
+			}
+			AddVehicleItem(vehicleid, i, PlayerItems[playerid][i]);
+			PlayerItems[playerid][i] = 0;
+		}
+		SendClientMessage(playerid, -1, "You placed all items into the vehicle.");
+		return 1;
+	}
+
+	return 0;
 }
