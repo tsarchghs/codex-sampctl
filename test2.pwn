@@ -17,6 +17,11 @@
 #define PREVIEW_Y 1343.1572
 #define PREVIEW_Z 15.3746
 #define PREVIEW_A 270.0
+#define TELEPORT_RADIUS 1.5
+#define TELEPORT_COOLDOWN_MS 1500
+
+#define TELEPORT_PICKUP_MODEL 1318
+#define TELEPORT_LABEL_DISTANCE 15.0
 
 new const gSkinList[] =
 {
@@ -36,6 +41,7 @@ enum pInfo
 	Float:pA,
 	pInterior,
 	pWorld,
+	pLastTeleportTick,
 	pPassHash[PASSWORD_LEN + 1]
 };
 new PlayerData[MAX_PLAYERS][pInfo];
@@ -43,6 +49,47 @@ new PlayerData[MAX_PLAYERS][pInfo];
 new MySQL:g_SQL;
 
 forward OnAccountCheck(playerid);
+
+enum eTeleportPoint
+{
+	Float:tX,
+	Float:tY,
+	Float:tZ,
+	Float:tA,
+	tInterior,
+	tWorld
+};
+
+enum eTeleport
+{
+	eTeleportPoint:tEntry,
+	eTeleportPoint:tExit
+};
+
+enum eTeleportPickup
+{
+	pEntry,
+	pExit
+};
+
+new const gTeleports[][eTeleport] =
+{
+	{
+		{ 269.1355, -1002.5511, 29.3317, 90.0, 0, 0 },
+		{ -1152.1948, -1520.1556, 10.6328, 180.0, 0, 0 }
+	},
+	{
+		{ 372.0581, -1004.3589, 29.4138, 270.0, 0, 0 },
+		{ -769.2115, 323.9313, 211.3962, 90.0, 0, 0 }
+	},
+	{
+		{ -561.9644, 286.7379, 82.1764, 0.0, 0, 0 },
+		{ -176.4835, 502.6943, 137.4201, 270.0, 0, 0 }
+	}
+};
+
+new gTeleportPickups[sizeof(gTeleports)][eTeleportPickup];
+new Text3D:gTeleportLabels[sizeof(gTeleports)][eTeleportPickup];
 
 stock ResetPlayerData(playerid)
 {
@@ -55,6 +102,7 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pA] = PREVIEW_A;
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
+	PlayerData[playerid][pLastTeleportTick] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
 	return 1;
 }
@@ -122,6 +170,147 @@ stock SavePlayerPosition(playerid)
 	return 1;
 }
 
+stock TeleportPlayerToPoint(playerid, eTeleportPoint:point)
+{
+	SetPlayerInterior(playerid, point[tInterior]);
+	SetPlayerVirtualWorld(playerid, point[tWorld]);
+	SetPlayerPos(playerid, point[tX], point[tY], point[tZ]);
+	SetPlayerFacingAngle(playerid, point[tA]);
+	return 1;
+}
+
+stock TryPropertyTeleport(playerid, index, bool:fromEntry)
+{
+	if (GetTickCount() - PlayerData[playerid][pLastTeleportTick] < TELEPORT_COOLDOWN_MS)
+	{
+		return 0;
+	}
+
+	if (!PlayerData[playerid][pLogged])
+	{
+		return 0;
+	}
+
+	if (index < 0 || index >= sizeof(gTeleports))
+	{
+		return 0;
+	}
+
+	if (fromEntry)
+	{
+		PlayerData[playerid][pLastTeleportTick] = GetTickCount();
+		TeleportPlayerToPoint(playerid, gTeleports[index][tExit]);
+		SendClientMessage(playerid, -1, "You use the property teleport.");
+		return 1;
+	}
+
+	PlayerData[playerid][pLastTeleportTick] = GetTickCount();
+	TeleportPlayerToPoint(playerid, gTeleports[index][tEntry]);
+	SendClientMessage(playerid, -1, "You use the property teleport.");
+	return 1;
+}
+
+stock CreatePropertyTeleports()
+{
+	for (new i = 0; i < sizeof(gTeleports); i++)
+	{
+		gTeleportPickups[i][pEntry] = CreatePickup(
+			TELEPORT_PICKUP_MODEL,
+			1,
+			gTeleports[i][tEntry][tX],
+			gTeleports[i][tEntry][tY],
+			gTeleports[i][tEntry][tZ],
+			gTeleports[i][tEntry][tWorld]
+		);
+		gTeleportPickups[i][pExit] = CreatePickup(
+			TELEPORT_PICKUP_MODEL,
+			1,
+			gTeleports[i][tExit][tX],
+			gTeleports[i][tExit][tY],
+			gTeleports[i][tExit][tZ],
+			gTeleports[i][tExit][tWorld]
+		);
+
+		gTeleportLabels[i][pEntry] = Create3DTextLabel(
+			"Property Teleport\nWalk into the marker.",
+			0xFFFFFFFF,
+			gTeleports[i][tEntry][tX],
+			gTeleports[i][tEntry][tY],
+			gTeleports[i][tEntry][tZ] + 0.8,
+			TELEPORT_LABEL_DISTANCE,
+			0,
+			gTeleports[i][tEntry][tWorld]
+		);
+		gTeleportLabels[i][pExit] = Create3DTextLabel(
+			"Property Teleport\nWalk into the marker.",
+			0xFFFFFFFF,
+			gTeleports[i][tExit][tX],
+			gTeleports[i][tExit][tY],
+			gTeleports[i][tExit][tZ] + 0.8,
+			TELEPORT_LABEL_DISTANCE,
+			0,
+			gTeleports[i][tExit][tWorld]
+		);
+	}
+	return 1;
+}
+
+stock DestroyPropertyTeleports()
+{
+	for (new i = 0; i < sizeof(gTeleports); i++)
+	{
+		if (gTeleportPickups[i][pEntry] != 0)
+		{
+			DestroyPickup(gTeleportPickups[i][pEntry]);
+			gTeleportPickups[i][pEntry] = 0;
+		}
+		if (gTeleportPickups[i][pExit] != 0)
+		{
+			DestroyPickup(gTeleportPickups[i][pExit]);
+			gTeleportPickups[i][pExit] = 0;
+		}
+
+		if (gTeleportLabels[i][pEntry] != Text3D:0)
+		{
+			Delete3DTextLabel(gTeleportLabels[i][pEntry]);
+			gTeleportLabels[i][pEntry] = Text3D:0;
+		}
+		if (gTeleportLabels[i][pExit] != Text3D:0)
+		{
+			Delete3DTextLabel(gTeleportLabels[i][pExit]);
+			gTeleportLabels[i][pExit] = Text3D:0;
+		}
+	}
+	return 1;
+}
+
+stock bool:IsPlayerNearTeleport(playerid, index, bool:entry)
+{
+	new interior = GetPlayerInterior(playerid);
+	new world = GetPlayerVirtualWorld(playerid);
+
+	if (entry)
+	{
+		if (interior != gTeleports[index][tEntry][tInterior] || world != gTeleports[index][tEntry][tWorld])
+		{
+			return false;
+		}
+		return IsPlayerInRangeOfPoint(playerid, TELEPORT_RADIUS,
+			gTeleports[index][tEntry][tX],
+			gTeleports[index][tEntry][tY],
+			gTeleports[index][tEntry][tZ]);
+	}
+
+	if (interior != gTeleports[index][tExit][tInterior] || world != gTeleports[index][tExit][tWorld])
+	{
+		return false;
+	}
+	return IsPlayerInRangeOfPoint(playerid, TELEPORT_RADIUS,
+		gTeleports[index][tExit][tX],
+		gTeleports[index][tExit][tY],
+		gTeleports[index][tExit][tZ]);
+}
+
 main()
 {
 	print("Account system loaded.");
@@ -131,6 +320,7 @@ public OnGameModeInit()
 {
 	SetGameModeText("MySQL Accounts");
 	UsePlayerPedAnims();
+	CreatePropertyTeleports();
 
 	for (new i = 0; i < sizeof(gSkinList); i++)
 	{
@@ -156,6 +346,7 @@ public OnGameModeInit()
 
 public OnGameModeExit()
 {
+	DestroyPropertyTeleports();
 	if (g_SQL != MYSQL_INVALID_HANDLE)
 	{
 		mysql_close(g_SQL);
@@ -322,4 +513,40 @@ public OnAccountCheck(playerid)
 		ShowRegisterDialog(playerid);
 	}
 	return 1;
+}
+
+public OnPlayerPickUpPickup(playerid, pickupid)
+{
+	for (new i = 0; i < sizeof(gTeleports); i++)
+	{
+		if (pickupid == gTeleportPickups[i][pEntry])
+		{
+			if (IsPlayerNearTeleport(playerid, i, true))
+			{
+				TryPropertyTeleport(playerid, i, true);
+			}
+			return 1;
+		}
+
+		if (pickupid == gTeleportPickups[i][pExit])
+		{
+			if (IsPlayerNearTeleport(playerid, i, false))
+			{
+				TryPropertyTeleport(playerid, i, false);
+			}
+			return 1;
+		}
+	}
+	return 1;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (!strcmp(cmdtext, "/teleports", true))
+	{
+		SendClientMessage(playerid, -1, "Property teleports are marked with green pickups.");
+		SendClientMessage(playerid, -1, "Walk into the marker to travel between entry/exit points.");
+		return 1;
+	}
+	return 0;
 }
