@@ -18,12 +18,49 @@
 #define PREVIEW_Z 15.3746
 #define PREVIEW_A 270.0
 
+#define CINEMA_SCREEN_MODEL 18880
+#define CINEMA_SEAT_MODEL_1 1723
+#define CINEMA_SEAT_MODEL_2 1724
+#define CINEMA_SEAT_MODEL_3 1671
+
+#define CINEMA_POINT_X  1115.0
+#define CINEMA_POINT_Y  -1450.0
+#define CINEMA_POINT_Z  15.0
+
+#define CINEMA_RADIUS 3.0
+
 new const gSkinList[] =
 {
 	0, 2, 7, 15, 20, 21, 23, 24, 28, 29,
 	46, 50, 60, 61, 70, 71, 72, 73, 105, 107,
 	120, 124, 125, 129, 147, 170, 180, 187, 200, 210
 };
+
+enum eCinemaSeat
+{
+	Float:seatX,
+	Float:seatY,
+	Float:seatZ,
+	Float:seatA,
+	seatModel
+};
+
+new const gCinemaSeats[][eCinemaSeat] =
+{
+	{1113.0, -1452.0, 15.0, 0.0, CINEMA_SEAT_MODEL_1},
+	{1115.0, -1452.0, 15.0, 0.0, CINEMA_SEAT_MODEL_2},
+	{1117.0, -1452.0, 15.0, 0.0, CINEMA_SEAT_MODEL_3},
+	{1113.0, -1450.0, 15.0, 0.0, CINEMA_SEAT_MODEL_1},
+	{1115.0, -1450.0, 15.0, 0.0, CINEMA_SEAT_MODEL_2},
+	{1117.0, -1450.0, 15.0, 0.0, CINEMA_SEAT_MODEL_3}
+};
+
+new gCinemaScreenObject = INVALID_OBJECT_ID;
+new gCinemaSeatObjects[sizeof(gCinemaSeats)];
+new bool:gCinemaActive = false;
+new gCinemaVideo[96];
+new gCinemaStartTick = 0;
+new bool:gCinemaWatching[MAX_PLAYERS];
 
 enum pInfo
 {
@@ -79,6 +116,122 @@ stock SetupPreviewCamera(playerid)
 	SetPlayerFacingAngle(playerid, PREVIEW_A);
 	SetPlayerCameraPos(playerid, PREVIEW_X + 4.0, PREVIEW_Y, PREVIEW_Z + 1.0);
 	SetPlayerCameraLookAt(playerid, PREVIEW_X, PREVIEW_Y, PREVIEW_Z + 1.0);
+	return 1;
+}
+
+stock SetupCinemaInterior()
+{
+	if (gCinemaScreenObject != INVALID_OBJECT_ID)
+	{
+		DestroyObject(gCinemaScreenObject);
+		gCinemaScreenObject = INVALID_OBJECT_ID;
+	}
+
+	for (new i = 0; i < sizeof(gCinemaSeatObjects); i++)
+	{
+		if (gCinemaSeatObjects[i] != INVALID_OBJECT_ID)
+		{
+			DestroyObject(gCinemaSeatObjects[i]);
+			gCinemaSeatObjects[i] = INVALID_OBJECT_ID;
+		}
+	}
+
+	gCinemaScreenObject = CreateObject(CINEMA_SCREEN_MODEL, 1115.0, -1456.0, 17.0, 0.0, 0.0, 180.0);
+
+	for (new i = 0; i < sizeof(gCinemaSeats); i++)
+	{
+		gCinemaSeatObjects[i] = CreateObject(
+			gCinemaSeats[i][seatModel],
+			gCinemaSeats[i][seatX],
+			gCinemaSeats[i][seatY],
+			gCinemaSeats[i][seatZ],
+			0.0,
+			0.0,
+			gCinemaSeats[i][seatA]
+		);
+	}
+
+	return 1;
+}
+
+stock CleanupCinemaInterior()
+{
+	if (gCinemaScreenObject != INVALID_OBJECT_ID)
+	{
+		DestroyObject(gCinemaScreenObject);
+		gCinemaScreenObject = INVALID_OBJECT_ID;
+	}
+
+	for (new i = 0; i < sizeof(gCinemaSeatObjects); i++)
+	{
+		if (gCinemaSeatObjects[i] != INVALID_OBJECT_ID)
+		{
+			DestroyObject(gCinemaSeatObjects[i]);
+			gCinemaSeatObjects[i] = INVALID_OBJECT_ID;
+		}
+	}
+	return 1;
+}
+
+stock InitCinemaObjects()
+{
+	gCinemaScreenObject = INVALID_OBJECT_ID;
+	for (new i = 0; i < sizeof(gCinemaSeatObjects); i++)
+	{
+		gCinemaSeatObjects[i] = INVALID_OBJECT_ID;
+	}
+	return 1;
+}
+
+stock StartCinemaBroadcast(const video[])
+{
+	format(gCinemaVideo, sizeof(gCinemaVideo), "%s", video);
+	gCinemaActive = true;
+	gCinemaStartTick = GetTickCount();
+
+	new message[144];
+	format(message, sizeof(message), "Cinema broadcast started: %s", gCinemaVideo);
+	SendClientMessageToAll(0x1E90FFFF, message);
+	return 1;
+}
+
+stock StopCinemaBroadcast()
+{
+	gCinemaActive = false;
+	gCinemaVideo[0] = '\0';
+	gCinemaStartTick = 0;
+
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		gCinemaWatching[i] = false;
+	}
+
+	SendClientMessageToAll(0x1E90FFFF, "Cinema broadcast stopped.");
+	return 1;
+}
+
+stock bool:IsPlayerAtCinema(playerid)
+{
+	new Float:x, Float:y, Float:z;
+	GetPlayerPos(playerid, x, y, z);
+
+	new Float:dx = x - CINEMA_POINT_X;
+	new Float:dy = y - CINEMA_POINT_Y;
+	return (dx * dx + dy * dy) <= (CINEMA_RADIUS * CINEMA_RADIUS);
+}
+
+stock ShowCinemaStatus(playerid)
+{
+	if (!gCinemaActive)
+	{
+		SendClientMessage(playerid, -1, "There is no active cinema broadcast right now.");
+		return 1;
+	}
+
+	new elapsed = (GetTickCount() - gCinemaStartTick) / 1000;
+	new message[160];
+	format(message, sizeof(message), "Now watching: %s (at %d seconds).", gCinemaVideo, elapsed);
+	SendClientMessage(playerid, 0x1E90FFFF, message);
 	return 1;
 }
 
@@ -151,6 +304,9 @@ public OnGameModeInit()
 			"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
 		);
 	}
+
+	InitCinemaObjects();
+	SetupCinemaInterior();
 	return 1;
 }
 
@@ -160,6 +316,7 @@ public OnGameModeExit()
 	{
 		mysql_close(g_SQL);
 	}
+	CleanupCinemaInterior();
 	return 1;
 }
 
@@ -193,6 +350,7 @@ public OnPlayerDisconnect(playerid, reason)
 	{
 		SavePlayerPosition(playerid);
 	}
+	gCinemaWatching[playerid] = false;
 	ResetPlayerData(playerid);
 	return 1;
 }
@@ -289,6 +447,85 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		ForceClassSelection(playerid);
 		SetupPreviewCamera(playerid);
 		SendClientMessage(playerid, -1, "Choose a skin and press Spawn to finish registration.");
+		return 1;
+	}
+
+	return 0;
+}
+
+public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
+{
+	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
+	{
+		if (!IsPlayerAtCinema(playerid))
+		{
+			return 1;
+		}
+
+		if (!gCinemaActive)
+		{
+			SendClientMessage(playerid, -1, "The cinema is not playing anything right now.");
+			return 1;
+		}
+
+		gCinemaWatching[playerid] = true;
+		ShowCinemaStatus(playerid);
+		return 1;
+	}
+	return 1;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (!strcmp(cmdtext, "/reloadcinema", true))
+	{
+		SetupCinemaInterior();
+		SendClientMessage(playerid, -1, "Cinema interior reloaded.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/cinemaoff", true))
+	{
+		if (!IsPlayerAdmin(playerid))
+		{
+			SendClientMessage(playerid, -1, "You must be an RCON admin to stop broadcasts.");
+			return 1;
+		}
+
+		StopCinemaBroadcast();
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/leavecinema", true))
+	{
+		if (!gCinemaWatching[playerid])
+		{
+			SendClientMessage(playerid, -1, "You are not watching the cinema.");
+			return 1;
+		}
+
+		gCinemaWatching[playerid] = false;
+		SendClientMessage(playerid, -1, "You stopped watching the cinema.");
+		return 1;
+	}
+
+	if (!strncmp(cmdtext, "/cinema ", 8, true))
+	{
+		if (!IsPlayerAdmin(playerid))
+		{
+			SendClientMessage(playerid, -1, "You must be an RCON admin to start broadcasts.");
+			return 1;
+		}
+
+		new video[96];
+		strmid(video, cmdtext, 8, strlen(cmdtext), sizeof(video));
+		if (strlen(video) < 3)
+		{
+			SendClientMessage(playerid, -1, "Usage: /cinema <youtube_id_or_url>");
+			return 1;
+		}
+
+		StartCinemaBroadcast(video);
 		return 1;
 	}
 
