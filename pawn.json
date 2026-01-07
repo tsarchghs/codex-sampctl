@@ -1,0 +1,15 @@
+{
+	"user": "tsarchghs",
+	"repo": "day2",
+	"tag": "0.0.1",
+	"entry": "test2.pwn",
+	"output": "gamemodes/test2.amx",
+	"dependencies": [
+		"pawn-lang/samp-stdlib",
+		"pBlueG/SA-MP-MySQL:R41-4"
+	],
+	"local": true,
+	"runtime": {
+		"version": "0.3.7"
+	}
+}
