@@ -11,6 +11,10 @@
 #define DIALOG_LOGIN    1
 #define DIALOG_REGISTER 2
 
+#define MAX_STATIONS 100
+
+#define DIALOG_SETSTATION 3
+
 #define PASSWORD_LEN 64
 
 #define PREVIEW_X 1958.3783
@@ -36,11 +40,20 @@ enum pInfo
 	Float:pA,
 	pInterior,
 	pWorld,
-	pPassHash[PASSWORD_LEN + 1]
+	pPassHash[PASSWORD_LEN + 1],
+	bool:pRadioVisible,
+	pRadioStation
 };
 new PlayerData[MAX_PLAYERS][pInfo];
 
 new MySQL:g_SQL;
+
+new const gStationUrls[MAX_STATIONS][] =
+{
+	"https://streams.ilovemusic.de/iloveradio1.mp3",
+	"https://ice1.somafm.com/groovesalad-128-mp3",
+	"https://ice2.somafm.com/dronezone-128-mp3"
+};
 
 forward OnAccountCheck(playerid);
 
@@ -56,7 +69,69 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
+	PlayerData[playerid][pRadioVisible] = true;
+	PlayerData[playerid][pRadioStation] = 0;
 	return 1;
+}
+
+stock PlayStationForPlayer(playerid, station)
+{
+	if (station < 1 || station > MAX_STATIONS)
+	{
+		SendClientMessage(playerid, -1, "Station must be between 1 and 100.");
+		return 0;
+	}
+
+	if (gStationUrls[station - 1][0] == '\0')
+	{
+		SendClientMessage(playerid, -1, "Station unavailable.");
+		return 0;
+	}
+
+	PlayAudioStreamForPlayer(playerid, gStationUrls[station - 1]);
+	PlayerData[playerid][pRadioStation] = station;
+	return 1;
+}
+
+stock StopStationForPlayer(playerid)
+{
+	StopAudioStreamForPlayer(playerid);
+	PlayerData[playerid][pRadioStation] = 0;
+	return 1;
+}
+
+stock GetCommandArg(const cmdtext[], argIndex, arg[], argSize)
+{
+	new idx = 0;
+	new start = 0;
+	new len = strlen(cmdtext);
+	new currentArg = -1;
+
+	while (idx <= len)
+	{
+		if (cmdtext[idx] == ' ' || cmdtext[idx] == '\0')
+		{
+			if (idx > start)
+			{
+				currentArg++;
+				if (currentArg == argIndex)
+				{
+					new copyLen = idx - start;
+					if (copyLen >= argSize)
+					{
+						copyLen = argSize - 1;
+					}
+					strmid(arg, cmdtext, start, start + copyLen, argSize);
+					return 1;
+				}
+			}
+			start = idx + 1;
+		}
+		idx++;
+	}
+
+	arg[0] = '\0';
+	return 0;
 }
 
 stock ShowLoginDialog(playerid, const message[] = "Enter your password:")
@@ -193,6 +268,7 @@ public OnPlayerDisconnect(playerid, reason)
 	{
 		SavePlayerPosition(playerid);
 	}
+	StopStationForPlayer(playerid);
 	ResetPlayerData(playerid);
 	return 1;
 }
@@ -265,6 +341,24 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		return 1;
 	}
 
+	if (dialogid == DIALOG_SETSTATION)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+
+		new station = strval(inputtext);
+		if (station < 1 || station > MAX_STATIONS)
+		{
+			ShowPlayerDialog(playerid, DIALOG_SETSTATION, DIALOG_STYLE_INPUT, "Set Station", "Enter station number (1-100):", "Set", "Cancel");
+			return 1;
+		}
+
+		PlayStationForPlayer(playerid, station);
+		return 1;
+	}
+
 	if (dialogid == DIALOG_REGISTER)
 	{
 		if (!response)
@@ -289,6 +383,52 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		ForceClassSelection(playerid);
 		SetupPreviewCamera(playerid);
 		SendClientMessage(playerid, -1, "Choose a skin and press Spawn to finish registration.");
+		return 1;
+	}
+
+	return 0;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (!strcmp(cmdtext, "/radioshow", true))
+	{
+		PlayerData[playerid][pRadioVisible] = true;
+		SendClientMessage(playerid, -1, "XM Radio UI is now visible.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/radiohide", true))
+	{
+		PlayerData[playerid][pRadioVisible] = false;
+		SendClientMessage(playerid, -1, "XM Radio UI is now hidden.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/setstation", true, 11))
+	{
+		if (GetPlayerInterior(playerid) == 0)
+		{
+			SendClientMessage(playerid, -1, "You must be inside a house or property to use this command.");
+			return 1;
+		}
+
+		new arg[16];
+		if (!GetCommandArg(cmdtext, 1, arg, sizeof(arg)))
+		{
+			ShowPlayerDialog(playerid, DIALOG_SETSTATION, DIALOG_STYLE_INPUT, "Set Station", "Enter station number (1-100):", "Set", "Cancel");
+			return 1;
+		}
+
+		new station = strval(arg);
+		if (!PlayStationForPlayer(playerid, station))
+		{
+			return 1;
+		}
+
+		new message[64];
+		format(message, sizeof(message), "Tuned to station %d.", station);
+		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
 
