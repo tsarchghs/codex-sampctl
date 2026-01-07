@@ -10,6 +10,7 @@
 
 #define DIALOG_LOGIN    1
 #define DIALOG_REGISTER 2
+#define DIALOG_GARAGE_HELP 3
 
 #define PASSWORD_LEN 64
 
@@ -29,6 +30,8 @@ enum pInfo
 {
 	bool:pLogged,
 	bool:pRegistering,
+	bool:pGarageInside,
+	bool:pGarageLocked,
 	pSkin,
 	Float:pX,
 	Float:pY,
@@ -48,6 +51,8 @@ stock ResetPlayerData(playerid)
 {
 	PlayerData[playerid][pLogged] = false;
 	PlayerData[playerid][pRegistering] = false;
+	PlayerData[playerid][pGarageInside] = false;
+	PlayerData[playerid][pGarageLocked] = false;
 	PlayerData[playerid][pSkin] = 0;
 	PlayerData[playerid][pX] = PREVIEW_X;
 	PlayerData[playerid][pY] = PREVIEW_Y;
@@ -56,6 +61,34 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
+	return 1;
+}
+
+stock ShowGarageHelp(playerid)
+{
+	new message[768];
+	strcat(message, "Residential garages commands:\n\n");
+	strcat(message, "Press Y - Enter/exit an unlocked garage while on foot.\n");
+	strcat(message, "Press K - Enter/exit an unlocked garage while on foot or in a vehicle.\n");
+	strcat(message, "/plock - Lock or unlock a garage (tenants only).\n");
+	strcat(message, "/pentrance - Change the inside entrance to your position.\n");
+	strcat(message, "/pinv - Check the inventory (tenants only).\n");
+	strcat(message, "/ptitem(s) - Remove items; add S for as many as possible.\n");
+	strcat(message, "/ppitem(s) - Place items; add S for as many as possible.\n");
+	strcat(message, "/outfit - Open saved outfit menu (tenants only).\n");
+	strcat(message, "/pmenu - Info menu, inventory, and construction permissions.\n");
+	strcat(message, "/pinfo - Show garage info (owner only).\n");
+	strcat(message, "/setrentable - Make garage rentable; blank to stop.\n");
+	strcat(message, "/rent - Rent a garage.\n");
+	strcat(message, "/stoprent - Stop renting (use outside door).\n");
+	strcat(message, "/tenants - Check tenants (owner only).\n");
+	strcat(message, "/kicktenant - Remove a tenant (owner only).\n");
+	strcat(message, "/evictall - Remove all tenants (owner only).\n");
+	strcat(message, "/pdeposit - Deposit money (owner only).\n");
+	strcat(message, "/pwithdrawl - Withdraw money (owner only).\n");
+	strcat(message, "/sellproperty - Sell garage back to market (owner only).\n");
+	strcat(message, "/playersellproperty - Sell garage to a player (owner only).\n");
+	ShowPlayerDialog(playerid, DIALOG_GARAGE_HELP, DIALOG_STYLE_MSGBOX, "Garage Help", message, "Close", "");
 	return 1;
 }
 
@@ -226,6 +259,11 @@ public OnPlayerRequestSpawn(playerid)
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
+	if (dialogid == DIALOG_GARAGE_HELP)
+	{
+		return 1;
+	}
+
 	if (dialogid == DIALOG_LOGIN)
 	{
 		if (!response)
@@ -292,6 +330,115 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		return 1;
 	}
 
+	return 0;
+}
+
+stock HandleGarageCommand(playerid, const command[])
+{
+	if (!strcmp(command, "/garagehelp", true))
+	{
+		return ShowGarageHelp(playerid);
+	}
+	if (!strcmp(command, "/plock", true))
+	{
+		PlayerData[playerid][pGarageLocked] = !PlayerData[playerid][pGarageLocked];
+		SendClientMessage(playerid, -1, PlayerData[playerid][pGarageLocked] ? "Garage locked." : "Garage unlocked.");
+		return 1;
+	}
+	if (!strcmp(command, "/pentrance", true))
+	{
+		SendClientMessage(playerid, -1, "Garage entrance updated (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pinv", true))
+	{
+		SendClientMessage(playerid, -1, "Garage inventory opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/ptitem", true) || !strcmp(command, "/ptitems", true))
+	{
+		SendClientMessage(playerid, -1, "Removed item(s) from the garage (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/ppitem", true) || !strcmp(command, "/ppitems", true))
+	{
+		SendClientMessage(playerid, -1, "Placed item(s) in the garage (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/outfit", true))
+	{
+		SendClientMessage(playerid, -1, "Outfit menu opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pmenu", true))
+	{
+		SendClientMessage(playerid, -1, "Garage info menu opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pinfo", true))
+	{
+		SendClientMessage(playerid, -1, "Garage info displayed (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/setrentable", true))
+	{
+		SendClientMessage(playerid, -1, "Garage rentable state updated (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/rent", true))
+	{
+		SendClientMessage(playerid, -1, "Garage rented (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/stoprent", true))
+	{
+		SendClientMessage(playerid, -1, "Stopped renting (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/tenants", true))
+	{
+		SendClientMessage(playerid, -1, "Tenant list shown (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/kicktenant", true))
+	{
+		SendClientMessage(playerid, -1, "Tenant removed (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/evictall", true))
+	{
+		SendClientMessage(playerid, -1, "All tenants evicted (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pdeposit", true))
+	{
+		SendClientMessage(playerid, -1, "Deposited money (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pwithdrawl", true))
+	{
+		SendClientMessage(playerid, -1, "Withdrew money (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/sellproperty", true))
+	{
+		SendClientMessage(playerid, -1, "Garage sold back to market (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/playersellproperty", true))
+	{
+		SendClientMessage(playerid, -1, "Garage sold to player (placeholder).");
+		return 1;
+	}
+	return 0;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (HandleGarageCommand(playerid, cmdtext))
+	{
+		return 1;
+	}
 	return 0;
 }
 
