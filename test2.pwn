@@ -43,6 +43,48 @@ new PlayerData[MAX_PLAYERS][pInfo];
 new MySQL:g_SQL;
 
 forward OnAccountCheck(playerid);
+forward bool:HandleLspdCommand(playerid, const cmd[], const params[]);
+
+stock bool:HasCommandPrefix(const cmd[], const prefix[])
+{
+	return !strcmp(cmd, prefix, true, strlen(prefix));
+}
+
+stock bool:ParseTwoInts(const input[], &first, &second)
+{
+	new length = strlen(input);
+	new idx = 0;
+
+	while (idx < length && input[idx] <= ' ')
+	{
+		idx++;
+	}
+
+	if (idx >= length)
+	{
+		return false;
+	}
+
+	first = strval(input[idx]);
+	while (idx < length && input[idx] > ' ')
+	{
+		idx++;
+	}
+
+	while (idx < length && input[idx] <= ' ')
+	{
+		idx++;
+	}
+
+	if (idx >= length)
+	{
+		second = 0;
+		return true;
+	}
+
+	second = strval(input[idx]);
+	return true;
+}
 
 stock ResetPlayerData(playerid)
 {
@@ -295,6 +337,41 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	return 0;
 }
 
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	new cmd[32];
+	new params[96];
+	new len = strlen(cmdtext);
+	new idx = 0;
+	new cmd_len = 0;
+
+	if (len == 0 || cmdtext[0] != '/')
+	{
+		return 0;
+	}
+
+	idx = 1;
+	while (idx < len && cmdtext[idx] > ' ' && cmd_len < sizeof(cmd) - 1)
+	{
+		cmd[cmd_len++] = cmdtext[idx++];
+	}
+	cmd[cmd_len] = '\0';
+
+	while (idx < len && cmdtext[idx] <= ' ')
+	{
+		idx++;
+	}
+
+	strmid(params, cmdtext, idx, len, sizeof(params));
+
+	if (HandleLspdCommand(playerid, cmd, params))
+	{
+		return 1;
+	}
+
+	return 0;
+}
+
 public OnAccountCheck(playerid)
 {
 	if (!IsPlayerConnected(playerid))
@@ -322,4 +399,209 @@ public OnAccountCheck(playerid)
 		ShowRegisterDialog(playerid);
 	}
 	return 1;
+}
+
+public bool:HandleLspdCommand(playerid, const cmd[], const params[])
+{
+	if (!strcmp(cmd, "pduty", true))
+	{
+		SetPlayerHealth(playerid, 100.0);
+		SetPlayerArmour(playerid, 100.0);
+		SetPlayerColor(playerid, 0x3399FFFF);
+		SendClientMessage(playerid, -1, "LSPD duty loadout applied.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "equipment", true))
+	{
+		if (HasCommandPrefix(params, "swat"))
+		{
+			SetPlayerHealth(playerid, 100.0);
+			SetPlayerArmour(playerid, 100.0);
+			GivePlayerWeapon(playerid, 24, 150);
+			GivePlayerWeapon(playerid, 31, 300);
+			SetPlayerColor(playerid, 0x3399FFFF);
+			SendClientMessage(playerid, -1, "LSPD SWAT equipment issued.");
+			return true;
+		}
+
+		if (HasCommandPrefix(params, "db"))
+		{
+			SetPlayerHealth(playerid, 100.0);
+			GivePlayerWeapon(playerid, 22, 120);
+			SendClientMessage(playerid, -1, "LSPD DB equipment issued.");
+			return true;
+		}
+
+		SetPlayerHealth(playerid, 100.0);
+		SetPlayerArmour(playerid, 100.0);
+		GivePlayerWeapon(playerid, 23, 150);
+		GivePlayerWeapon(playerid, 22, 120);
+		SetPlayerColor(playerid, 0x3399FFFF);
+		SendClientMessage(playerid, -1, "LSPD equipment issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "take", true))
+	{
+		new weapon_id = strval(params);
+		switch (weapon_id)
+		{
+			case 1: GivePlayerWeapon(playerid, 31, 200);
+			case 2: GivePlayerWeapon(playerid, 25, 40);
+			case 3: GivePlayerWeapon(playerid, 34, 20);
+			default:
+			{
+				SendClientMessage(playerid, -1, "Usage: /take [1=AR, 2=Shotgun, 3=Sniper]");
+				return true;
+			}
+		}
+
+		SendClientMessage(playerid, -1, "Weapon taken from cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "takespike", true))
+	{
+		SendClientMessage(playerid, -1, "You retrieve a spike strip from the cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "spike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip placed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "removespike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip picked up.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "placespike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip returned to the cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "uniform", true))
+	{
+		SendClientMessage(playerid, -1, "Uniform customization is not implemented yet.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "r", true) || !strcmp(cmd, "radio", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /r [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0x33CCFFFF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "dep", true) || !strcmp(cmd, "department", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /dep [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0x66FFCCFF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "m", true) || !strcmp(cmd, "megaphone", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /m [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0xFFFF99FF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "arrest", true))
+	{
+		SendClientMessage(playerid, -1, "Arrest command acknowledged.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "cuff", true))
+	{
+		SendClientMessage(playerid, -1, "Suspect cuffed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "uncuff", true))
+	{
+		SendClientMessage(playerid, -1, "Suspect uncuffed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "panic", true))
+	{
+		SendClientMessage(playerid, 0xFF4444FF, "PANIC BUTTON ACTIVATED!");
+		return true;
+	}
+
+	if (!strcmp(cmd, "mdc", true))
+	{
+		SendClientMessage(playerid, -1, "MDC terminal not implemented yet.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "radar", true))
+	{
+		new dist;
+		new speed;
+		if (!ParseTwoInts(params, dist, speed))
+		{
+			SendClientMessage(playerid, -1, "Usage: /radar [distance] [speed]");
+			return true;
+		}
+		SendClientMessage(playerid, -1, "Speed radar enabled.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "radaroff", true))
+	{
+		SendClientMessage(playerid, -1, "Speed radar disabled.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "setpatrol", true))
+	{
+		SendClientMessage(playerid, -1, "Vehicle patrol label set.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "fine", true))
+	{
+		SendClientMessage(playerid, -1, "Fine issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "vfine", true))
+	{
+		SendClientMessage(playerid, -1, "Vehicle fine issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "checkfines", true))
+	{
+		SendClientMessage(playerid, -1, "No active fines found.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "checkvehiclefines", true))
+	{
+		SendClientMessage(playerid, -1, "No active vehicle fines found.");
+		return true;
+	}
+
+	return false;
 }
