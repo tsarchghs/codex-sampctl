@@ -12,6 +12,8 @@
 #define DIALOG_REGISTER 2
 
 #define PASSWORD_LEN 64
+#define DRUG_EFFECT_INTERVAL 60000
+#define ADDICTION_DECAY_INTERVAL (3 * 60 * 60 * 1000)
 
 #define PREVIEW_X 1958.3783
 #define PREVIEW_Y 1343.1572
@@ -36,13 +38,18 @@ enum pInfo
 	Float:pA,
 	pInterior,
 	pWorld,
-	pPassHash[PASSWORD_LEN + 1]
+	pPassHash[PASSWORD_LEN + 1],
+	pAddiction,
+	pLastAddictionTick,
+	pDrugEffectEndTick,
+	pCarryLimit
 };
 new PlayerData[MAX_PLAYERS][pInfo];
 
 new MySQL:g_SQL;
 
 forward OnAccountCheck(playerid);
+forward OnAddictionTick();
 
 stock ResetPlayerData(playerid)
 {
@@ -56,6 +63,10 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
+	PlayerData[playerid][pAddiction] = 0;
+	PlayerData[playerid][pLastAddictionTick] = GetTickCount();
+	PlayerData[playerid][pDrugEffectEndTick] = 0;
+	PlayerData[playerid][pCarryLimit] = 8;
 	return 1;
 }
 
@@ -89,12 +100,13 @@ stock RegisterPlayer(playerid)
 
 	new query[256];
 	mysql_format(g_SQL, query, sizeof(query),
-		"INSERT INTO `accounts` (`name`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`) VALUES ('%e','%e',%d,%.4f,%.4f,%.4f,%.4f,%d,%d)",
+		"INSERT INTO `accounts` (`name`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`addiction`) VALUES ('%e','%e',%d,%.4f,%.4f,%.4f,%.4f,%d,%d,%d)",
 		name,
 		PlayerData[playerid][pPassHash],
 		PlayerData[playerid][pSkin],
 		PREVIEW_X, PREVIEW_Y, PREVIEW_Z, PREVIEW_A,
-		0, 0
+		0, 0,
+		PlayerData[playerid][pAddiction]
 	);
 	mysql_tquery(g_SQL, query);
 	return 1;
@@ -115,10 +127,106 @@ stock SavePlayerPosition(playerid)
 
 	new query[256];
 	mysql_format(g_SQL, query, sizeof(query),
-		"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d WHERE `name`='%e' LIMIT 1",
-		skin, x, y, z, a, interior, world, name
+		"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `addiction`=%d WHERE `name`='%e' LIMIT 1",
+		skin, x, y, z, a, interior, world, PlayerData[playerid][pAddiction], name
 	);
 	mysql_tquery(g_SQL, query);
+	return 1;
+}
+
+stock ApplyScreenEffect(playerid, bool:strong)
+{
+	if (strong)
+	{
+		SetPlayerDrunkLevel(playerid, 30000);
+	}
+	else
+	{
+		SetPlayerDrunkLevel(playerid, 15000);
+	}
+	PlayerData[playerid][pDrugEffectEndTick] = GetTickCount() + (3 * 60 * 1000);
+	return 1;
+}
+
+stock Float:GetAddictionMultiplier(playerid)
+{
+	new Float:multiplier = 1.0 - (float(PlayerData[playerid][pAddiction]) * 0.01);
+	if (multiplier < 0.2)
+	{
+		multiplier = 0.2;
+	}
+	return multiplier;
+}
+
+stock IncreaseAddiction(playerid, bool:skipChance)
+{
+	if (skipChance && random(5) == 0)
+	{
+		return 1;
+	}
+	PlayerData[playerid][pAddiction] += 1;
+	if (PlayerData[playerid][pAddiction] > 100)
+	{
+		PlayerData[playerid][pAddiction] = 100;
+	}
+	return 1;
+}
+
+stock UseMarijuana(playerid)
+{
+	new Float:health;
+	GetPlayerHealth(playerid, health);
+
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:target = 115.0;
+	new Float:bonus = (target - health) * multiplier;
+	if (bonus < 0.0)
+	{
+		bonus = 0.0;
+	}
+	SetPlayerHealth(playerid, floatmin(200.0, health + bonus));
+	ApplyScreenEffect(playerid, false);
+	IncreaseAddiction(playerid, true);
+	return 1;
+}
+
+stock UseCocaine(playerid)
+{
+	new Float:health;
+	GetPlayerHealth(playerid, health);
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:bonus = 50.0 * multiplier;
+	SetPlayerHealth(playerid, floatmin(200.0, health + bonus));
+	ApplyScreenEffect(playerid, true);
+	IncreaseAddiction(playerid, false);
+	return 1;
+}
+
+stock UseHeroin(playerid)
+{
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:carryBonus = floatround(2.0 * multiplier, floatround_floor);
+	if (carryBonus < 1)
+	{
+		carryBonus = 1;
+	}
+	PlayerData[playerid][pCarryLimit] += carryBonus;
+	if (PlayerData[playerid][pCarryLimit] > 10)
+	{
+		PlayerData[playerid][pCarryLimit] = 10;
+	}
+	ApplyScreenEffect(playerid, true);
+	IncreaseAddiction(playerid, false);
+	return 1;
+}
+
+stock UseMethadone(playerid)
+{
+	PlayerData[playerid][pAddiction] -= 5;
+	if (PlayerData[playerid][pAddiction] < 0)
+	{
+		PlayerData[playerid][pAddiction] = 0;
+	}
 	return 1;
 }
 
@@ -148,9 +256,10 @@ public OnGameModeInit()
 	{
 		print("[MySQL] Connection successful.");
 		mysql_tquery(g_SQL,
-			"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+			"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,`addiction` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
 		);
 	}
+	SetTimer("OnAddictionTick", DRUG_EFFECT_INTERVAL, true);
 	return 1;
 }
 
@@ -180,7 +289,7 @@ public OnPlayerConnect(playerid)
 
 	new query[256];
 	mysql_format(g_SQL, query, sizeof(query),
-		"SELECT `password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world` FROM `accounts` WHERE `name`='%e' LIMIT 1",
+		"SELECT `password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`addiction` FROM `accounts` WHERE `name`='%e' LIMIT 1",
 		name
 	);
 	mysql_tquery(g_SQL, query, "OnAccountCheck", "i", playerid);
@@ -220,6 +329,15 @@ public OnPlayerRequestSpawn(playerid)
 		PlayerData[playerid][pRegistering] = false;
 		PlayerData[playerid][pLogged] = true;
 		RegisterPlayer(playerid);
+	}
+	return 1;
+}
+
+public OnPlayerSpawn(playerid)
+{
+	if (PlayerData[playerid][pAddiction] >= 50)
+	{
+		SetPlayerHealth(playerid, 50.0);
 	}
 	return 1;
 }
@@ -314,6 +432,7 @@ public OnAccountCheck(playerid)
 		cache_get_value_name_float(0, "a", PlayerData[playerid][pA]);
 		cache_get_value_name_int(0, "interior", PlayerData[playerid][pInterior]);
 		cache_get_value_name_int(0, "world", PlayerData[playerid][pWorld]);
+		cache_get_value_name_int(0, "addiction", PlayerData[playerid][pAddiction]);
 
 		ShowLoginDialog(playerid);
 	}
@@ -322,4 +441,121 @@ public OnAccountCheck(playerid)
 		ShowRegisterDialog(playerid);
 	}
 	return 1;
+}
+
+public OnAddictionTick()
+{
+	new currentTick = GetTickCount();
+	for (new playerid = 0; playerid < MAX_PLAYERS; playerid++)
+	{
+		if (!IsPlayerConnected(playerid) || !PlayerData[playerid][pLogged])
+		{
+			continue;
+		}
+
+		if (PlayerData[playerid][pDrugEffectEndTick] > 0 && currentTick >= PlayerData[playerid][pDrugEffectEndTick])
+		{
+			SetPlayerDrunkLevel(playerid, 0);
+			PlayerData[playerid][pDrugEffectEndTick] = 0;
+		}
+
+		if (currentTick - PlayerData[playerid][pLastAddictionTick] >= ADDICTION_DECAY_INTERVAL)
+		{
+			if (PlayerData[playerid][pAddiction] > 0)
+			{
+				PlayerData[playerid][pAddiction] -= 1;
+			}
+			PlayerData[playerid][pLastAddictionTick] = currentTick;
+		}
+
+		if (PlayerData[playerid][pAddiction] >= 50)
+		{
+			new Float:health;
+			GetPlayerHealth(playerid, health);
+			if (health > 1.0)
+			{
+				SetPlayerHealth(playerid, health - 1.0);
+			}
+		}
+	}
+	return 1;
+}
+
+stock GetCommandArgument(const string[], index, result[], result_len)
+{
+	new length = strlen(string);
+	new found = 0;
+	new start = 0;
+
+	for (new i = 0; i <= length; i++)
+	{
+		if (string[i] == ' ' || string[i] == '\0')
+		{
+			if (found == index)
+			{
+				new size = i - start;
+				if (size >= result_len)
+				{
+					size = result_len - 1;
+				}
+				strmid(result, string, start, start + size, result_len);
+				return 1;
+			}
+			found++;
+			start = i + 1;
+		}
+	}
+	return 0;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (!strcmp(cmdtext, "/drug", true, 5))
+	{
+		new drug[16];
+		if (!GetCommandArgument(cmdtext, 1, drug, sizeof(drug)))
+		{
+			SendClientMessage(playerid, -1, "Usage: /drug [marijuana|cocaine|heroin]");
+			return 1;
+		}
+
+		if (!strcmp(drug, "marijuana", true))
+		{
+			UseMarijuana(playerid);
+			SendClientMessage(playerid, -1, "You smoke marijuana and feel a light buzz.");
+			return 1;
+		}
+		if (!strcmp(drug, "cocaine", true))
+		{
+			UseCocaine(playerid);
+			SendClientMessage(playerid, -1, "You take cocaine and feel a strong rush.");
+			return 1;
+		}
+		if (!strcmp(drug, "heroin", true))
+		{
+			UseHeroin(playerid);
+			SendClientMessage(playerid, -1, "You take heroin and feel a heavy effect.");
+			return 1;
+		}
+
+		SendClientMessage(playerid, -1, "Unknown drug. Use marijuana, cocaine, or heroin.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/methadone", true))
+	{
+		UseMethadone(playerid);
+		SendClientMessage(playerid, -1, "You take methadone and your addiction eases.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/addiction", true))
+	{
+		new message[64];
+		format(message, sizeof(message), "Addiction: %d | Carry limit: %dkg", PlayerData[playerid][pAddiction], PlayerData[playerid][pCarryLimit]);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	return 0;
 }
