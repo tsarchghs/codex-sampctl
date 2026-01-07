@@ -13,6 +13,12 @@
 
 #define PASSWORD_LEN 64
 
+#define MINIGAME_NONE     0
+#define MINIGAME_LOCKPICK 1
+#define MINIGAME_HOTWIRE  2
+
+#define MINIGAME_KEYS 3
+
 #define PREVIEW_X 1958.3783
 #define PREVIEW_Y 1343.1572
 #define PREVIEW_Z 15.3746
@@ -36,13 +42,42 @@ enum pInfo
 	Float:pA,
 	pInterior,
 	pWorld,
-	pPassHash[PASSWORD_LEN + 1]
+	pPassHash[PASSWORD_LEN + 1],
+	pMiniGame,
+	pMiniVehicle,
+	pMiniStep,
+	pMiniKeySequence[MINIGAME_KEYS],
+	pMiniTimer
 };
 new PlayerData[MAX_PLAYERS][pInfo];
 
 new MySQL:g_SQL;
 
 forward OnAccountCheck(playerid);
+forward OnMiniGameTimeout(playerid);
+
+new gVehicleLockLevel[MAX_VEHICLES];
+new gVehicleAlarmLevel[MAX_VEHICLES];
+new gVehicleMarketPrice[MAX_VEHICLES];
+new gVehicleManufacturer[MAX_VEHICLES];
+
+new const gMiniKeys[] =
+{
+	KEY_LEFT,
+	KEY_RIGHT,
+	KEY_JUMP,
+	KEY_SPRINT,
+	KEY_CROUCH
+};
+
+new const gMiniKeyNames[][] =
+{
+	"LEFT",
+	"RIGHT",
+	"JUMP",
+	"SPRINT",
+	"CROUCH"
+};
 
 stock ResetPlayerData(playerid)
 {
@@ -56,6 +91,164 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
 	PlayerData[playerid][pPassHash][0] = '\0';
+	PlayerData[playerid][pMiniGame] = MINIGAME_NONE;
+	PlayerData[playerid][pMiniVehicle] = INVALID_VEHICLE_ID;
+	PlayerData[playerid][pMiniStep] = 0;
+	PlayerData[playerid][pMiniTimer] = 0;
+	return 1;
+}
+
+stock CancelMiniGame(playerid)
+{
+	if (PlayerData[playerid][pMiniTimer] != 0)
+	{
+		KillTimer(PlayerData[playerid][pMiniTimer]);
+		PlayerData[playerid][pMiniTimer] = 0;
+	}
+
+	PlayerData[playerid][pMiniGame] = MINIGAME_NONE;
+	PlayerData[playerid][pMiniVehicle] = INVALID_VEHICLE_ID;
+	PlayerData[playerid][pMiniStep] = 0;
+	return 1;
+}
+
+stock GetMiniGameDifficulty(vehicleid)
+{
+	new difficulty = gVehicleLockLevel[vehicleid] + gVehicleAlarmLevel[vehicleid];
+	difficulty += gVehicleMarketPrice[vehicleid] / 20000;
+	difficulty += gVehicleManufacturer[vehicleid];
+	if (difficulty < 1)
+	{
+		difficulty = 1;
+	}
+	return difficulty;
+}
+
+stock GetNearestVehicle(playerid, Float:radius)
+{
+	new Float:px, Float:py, Float:pz;
+	GetPlayerPos(playerid, px, py, pz);
+
+	new Float:bestDistance = radius;
+	new vehicleid = INVALID_VEHICLE_ID;
+
+	for (new i = 1; i < MAX_VEHICLES; i++)
+	{
+		if (!IsValidVehicle(i))
+		{
+			continue;
+		}
+
+		new Float:vx, Float:vy, Float:vz;
+		GetVehiclePos(i, vx, vy, vz);
+		new Float:distance = floatsqroot((vx - px) * (vx - px) + (vy - py) * (vy - py) + (vz - pz) * (vz - pz));
+		if (distance <= bestDistance)
+		{
+			bestDistance = distance;
+			vehicleid = i;
+		}
+	}
+	return vehicleid;
+}
+
+stock ShowMiniGameHelp(playerid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_LOCKPICK)
+	{
+		SendClientMessage(playerid, -1, "Lockpick: press the shown key sequence in order. Press H to repeat this help.");
+		SendClientMessage(playerid, -1, "Higher lock/alarm levels give you less time.");
+	}
+	else if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		SendClientMessage(playerid, -1, "Hotwire: match the key sequence before the timer runs out.");
+		SendClientMessage(playerid, -1, "Quick success starts the engine. Failure can trigger the alarm.");
+	}
+	return 1;
+}
+
+stock ShowMiniGamePrompt(playerid)
+{
+	new step = PlayerData[playerid][pMiniStep];
+	new keyIndex = PlayerData[playerid][pMiniKeySequence][step];
+
+	new message[96];
+	format(message, sizeof(message), "~w~Press ~y~%s~w~ (%d/%d)~n~~b~Press H for help", gMiniKeyNames[keyIndex], step + 1, MINIGAME_KEYS);
+	GameTextForPlayer(playerid, message, 3000, 3);
+	return 1;
+}
+
+stock StartMiniGame(playerid, vehicleid, minigameType)
+{
+	CancelMiniGame(playerid);
+
+	PlayerData[playerid][pMiniGame] = minigameType;
+	PlayerData[playerid][pMiniVehicle] = vehicleid;
+	PlayerData[playerid][pMiniStep] = 0;
+
+	for (new i = 0; i < MINIGAME_KEYS; i++)
+	{
+		PlayerData[playerid][pMiniKeySequence][i] = random(sizeof(gMiniKeys));
+	}
+
+	new difficulty = GetMiniGameDifficulty(vehicleid);
+	new timeLimit = 6500 - (difficulty * 400);
+	if (timeLimit < 2500)
+	{
+		timeLimit = 2500;
+	}
+	if (timeLimit > 9000)
+	{
+		timeLimit = 9000;
+	}
+
+	PlayerData[playerid][pMiniTimer] = SetTimerEx("OnMiniGameTimeout", timeLimit, false, "i", playerid);
+	ShowMiniGamePrompt(playerid);
+	new info[96];
+	format(info, sizeof(info), "Difficulty %d: lock %d, alarm %d.", difficulty, gVehicleLockLevel[vehicleid], gVehicleAlarmLevel[vehicleid]);
+	SendClientMessage(playerid, -1, info);
+	return 1;
+}
+
+stock FailMiniGame(playerid, const reason[])
+{
+	new vehicleid = PlayerData[playerid][pMiniVehicle];
+	if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+	{
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		SetVehicleParamsEx(vehicleid, engine, lights, 1, doors, bonnet, boot, objective);
+	}
+
+	SendClientMessage(playerid, -1, reason);
+	CancelMiniGame(playerid);
+	return 1;
+}
+
+stock CompleteMiniGame(playerid)
+{
+	new vehicleid = PlayerData[playerid][pMiniVehicle];
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_LOCKPICK)
+	{
+		if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+		{
+			new engine, lights, alarm, doors, bonnet, boot, objective;
+			GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+			SetVehicleParamsEx(vehicleid, engine, lights, 0, 0, bonnet, boot, objective);
+			GameTextForPlayer(playerid, "~g~Vehicle unlocked!", 2000, 3);
+		}
+	}
+	else if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+		{
+			new engine, lights, alarm, doors, bonnet, boot, objective;
+			GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+			SetVehicleParamsEx(vehicleid, 1, lights, 0, doors, bonnet, boot, objective);
+			GameTextForPlayer(playerid, "~g~Engine started!", 2000, 3);
+		}
+	}
+
+	CancelMiniGame(playerid);
 	return 1;
 }
 
@@ -137,6 +330,27 @@ public OnGameModeInit()
 		AddPlayerClass(gSkinList[i], PREVIEW_X, PREVIEW_Y, PREVIEW_Z, PREVIEW_A, 0, 0, 0, 0, 0, 0);
 	}
 
+	new vehicleid = CreateVehicle(411, PREVIEW_X + 6.0, PREVIEW_Y + 4.0, PREVIEW_Z, 0.0, 0, 0, -1);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 3;
+	gVehicleAlarmLevel[vehicleid] = 2;
+	gVehicleMarketPrice[vehicleid] = 120000;
+	gVehicleManufacturer[vehicleid] = 2;
+
+	vehicleid = CreateVehicle(560, PREVIEW_X + 8.0, PREVIEW_Y - 3.0, PREVIEW_Z, 180.0, 0, 0, -1);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 2;
+	gVehicleAlarmLevel[vehicleid] = 1;
+	gVehicleMarketPrice[vehicleid] = 60000;
+	gVehicleManufacturer[vehicleid] = 1;
+
+	vehicleid = CreateVehicle(489, PREVIEW_X + 12.0, PREVIEW_Y + 6.0, PREVIEW_Z, 90.0, 0, 0, -1);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 4;
+	gVehicleAlarmLevel[vehicleid] = 3;
+	gVehicleMarketPrice[vehicleid] = 90000;
+	gVehicleManufacturer[vehicleid] = 3;
+
 	new MySQLOpt:options = mysql_init_options();
 	mysql_set_option(options, SERVER_PORT, MYSQL_PORT);
 	g_SQL = mysql_connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, options);
@@ -189,6 +403,7 @@ public OnPlayerConnect(playerid)
 
 public OnPlayerDisconnect(playerid, reason)
 {
+	CancelMiniGame(playerid);
 	if (PlayerData[playerid][pLogged])
 	{
 		SavePlayerPosition(playerid);
@@ -322,4 +537,130 @@ public OnAccountCheck(playerid)
 		ShowRegisterDialog(playerid);
 	}
 	return 1;
+}
+
+public OnMiniGameTimeout(playerid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_NONE)
+	{
+		return 0;
+	}
+
+	FailMiniGame(playerid, "You ran out of time and failed the attempt.");
+	return 1;
+}
+
+public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_NONE)
+	{
+		return 1;
+	}
+
+	if ((newkeys & KEY_ACTION) && !(oldkeys & KEY_ACTION))
+	{
+		ShowMiniGameHelp(playerid);
+		return 1;
+	}
+
+	for (new i = 0; i < sizeof(gMiniKeys); i++)
+	{
+		if ((newkeys & gMiniKeys[i]) && !(oldkeys & gMiniKeys[i]))
+		{
+			new expectedIndex = PlayerData[playerid][pMiniKeySequence][PlayerData[playerid][pMiniStep]];
+			if (i == expectedIndex)
+			{
+				PlayerData[playerid][pMiniStep]++;
+				if (PlayerData[playerid][pMiniStep] >= MINIGAME_KEYS)
+				{
+					CompleteMiniGame(playerid);
+					return 1;
+				}
+
+				ShowMiniGamePrompt(playerid);
+			}
+			else
+			{
+				FailMiniGame(playerid, "Wrong key pressed. The attempt failed.");
+			}
+			return 1;
+		}
+	}
+	return 1;
+}
+
+public OnPlayerExitVehicle(playerid, vehicleid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		FailMiniGame(playerid, "You left the vehicle and failed to hotwire it.");
+	}
+	return 1;
+}
+
+public OnPlayerCommandText(playerid, cmdtext[])
+{
+	if (!strcmp(cmdtext, "/vbreakin", true) || !strcmp(cmdtext, "/vbi", true))
+	{
+		if (PlayerData[playerid][pMiniGame] != MINIGAME_NONE)
+		{
+			SendClientMessage(playerid, -1, "You are already attempting a minigame.");
+			return 1;
+		}
+
+		if (GetPlayerState(playerid) != PLAYER_STATE_ONFOOT)
+		{
+			SendClientMessage(playerid, -1, "You need to be on foot to start lockpicking.");
+			return 1;
+		}
+
+		new vehicleid = GetNearestVehicle(playerid, 3.5);
+		if (vehicleid == INVALID_VEHICLE_ID)
+		{
+			SendClientMessage(playerid, -1, "No vehicle nearby to break into.");
+			return 1;
+		}
+
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		if (doors == 0)
+		{
+			SendClientMessage(playerid, -1, "This vehicle is already unlocked.");
+			return 1;
+		}
+
+		StartMiniGame(playerid, vehicleid, MINIGAME_LOCKPICK);
+		SendClientMessage(playerid, -1, "Lockpicking started. Follow the on-screen prompts.");
+		return 1;
+	}
+
+	if (!strcmp(cmdtext, "/hotwire", true))
+	{
+		if (PlayerData[playerid][pMiniGame] != MINIGAME_NONE)
+		{
+			SendClientMessage(playerid, -1, "You are already attempting a minigame.");
+			return 1;
+		}
+
+		if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+		{
+			SendClientMessage(playerid, -1, "You need to be in the driver's seat to hotwire.");
+			return 1;
+		}
+
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		if (engine == 1)
+		{
+			SendClientMessage(playerid, -1, "The engine is already running.");
+			return 1;
+		}
+
+		StartMiniGame(playerid, vehicleid, MINIGAME_HOTWIRE);
+		SendClientMessage(playerid, -1, "Hotwiring started. Follow the on-screen prompts.");
+		return 1;
+	}
+
+	return 0;
 }
