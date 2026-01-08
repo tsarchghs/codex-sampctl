@@ -16,8 +16,33 @@
 #define DIALOG_ITEM_GIVE      6
 #define DIALOG_VEHICLE_ITEMS  7
 #define DIALOG_VEHICLE_AMOUNT 8
+#define DIALOG_DMV            9
+#define DIALOG_DMV_PAY        10
+#define DIALOG_GARAGE_INFO    11
+#define DIALOG_GARAGE_HELP    12
+#define DIALOG_SETSTATION     13
+#define DIALOG_LOGIN_CANCEL   14
+#define DIALOG_REGISTER_CANCEL 15
+#define DIALOG_HELP           16
+#define DIALOG_TUTORIAL       17
 
 #define PASSWORD_LEN 64
+#define MIN_PASSWORD_LEN 6
+#define MAX_LOGIN_ATTEMPTS 3
+#define ACCOUNT_VERSION 1
+#define STARTER_CASH 5000
+#define AUTO_SAVE_INTERVAL_MS 300000
+#define REPAIR_COST_PER_DAMAGE 2
+#define REPAIR_BASE_COST 50
+#define INVALID_ACCOUNT_ID 0
+#define DRUG_EFFECT_INTERVAL 60000
+#define ADDICTION_DECAY_INTERVAL (3 * 60 * 60 * 1000)
+
+#define MINIGAME_NONE     0
+#define MINIGAME_LOCKPICK 1
+#define MINIGAME_HOTWIRE  2
+
+#define MINIGAME_KEYS 3
 
 #define PREVIEW_X 1958.3783
 #define PREVIEW_Y 1343.1572
@@ -27,6 +52,43 @@
 #define MAX_STOLEN_PLATES 256
 #define ALPR_SCAN_INTERVAL 4000
 #define ALPR_RANGE 20.0
+#define MAX_STATIONS 3
+
+#define DMV_VEHICLE_VALUE 50000
+#define DMV_REGISTRATION_RATE 0.20
+#define DMV_TAX_RATE 0.05
+#define DMV_INSURANCE_RATE 0.05
+#define DMV_BILLING_INTERVAL 3600000
+
+#define GARAGE_X 1422.3159
+#define GARAGE_Y -1324.9280
+#define GARAGE_Z 13.5547
+#define CHOP_X 2154.9868
+#define CHOP_Y -1970.0945
+#define CHOP_Z 13.5469
+
+#define GARAGE_RADIUS 8.0
+#define CHOP_RADIUS 8.0
+
+#define PARTS_PER_CHOP 3
+#define PARTS_FOR_METAL 5
+
+#define TELEPORT_RADIUS 1.5
+#define TELEPORT_COOLDOWN_MS 1500
+#define TELEPORT_PICKUP_MODEL 1318
+#define TELEPORT_LABEL_DISTANCE 15.0
+
+#define TAXI_DEFAULT_FARE 10
+#define TAXI_MIN_FARE 1
+#define TAXI_MAX_FARE 100
+#define TAXI_RENTAL_MINUTES 30
+#define TAXI_RENTAL_COST 300
+#define TAXI_RENTAL_EXTEND_MINUTES 30
+#define TAXI_RENTAL_REMINDER_FIVE 5
+#define TAXI_RENTAL_REMINDER_ONE 1
+#define TAXI_TOW_FEE 300
+#define TAXI_DAMAGE_FEE 250
+#define TAXI_METER_RATE_MS 60000
 
 #define MAX_ITEMS 12
 #define MAX_DROPS 100
@@ -42,6 +104,87 @@
 #define CINEMA_POINT_Z  15.0
 
 #define CINEMA_RADIUS 3.0
+
+#define PET_UPDATE_MS 1000
+#define PET_WANDER_RADIUS 50.0
+#define PET_FOLLOW_DISTANCE 2.0
+
+#define PET_TASK_NONE 0
+#define PET_TASK_FOLLOW 1
+#define PET_TASK_STAY 2
+#define PET_TASK_WANDER 3
+
+new const gPetSkins[] =
+{
+	70, 71, 72, 73, 105, 147
+};
+
+new const gPetNames[][] =
+{
+	"dog1",
+	"dog2",
+	"dog3",
+	"dog4",
+	"dog5",
+	"cat"
+};
+
+#define MAX_BUSINESSES 6
+#define BUSINESS_BUY_RADIUS 3.0
+#define BUSINESS_COMPONENTS_DEFAULT 50
+#define COMPONENT_CRATE_COST 500
+#define BUSINESS_LABEL_DISTANCE 20.0
+
+#define COMPONENT_WAREHOUSE_X 2172.8499
+#define COMPONENT_WAREHOUSE_Y -2265.4827
+#define COMPONENT_WAREHOUSE_Z 13.3047
+
+new BusinessPickups[MAX_BUSINESSES];
+new Text3D:BusinessLabels[MAX_BUSINESSES];
+new WarehousePickup;
+
+enum BusinessType
+{
+	BUSINESS_AMMUNATION,
+	BUSINESS_CLOTHING,
+	BUSINESS_247,
+	BUSINESS_BARBERSHOP,
+	BUSINESS_BEAUTY_SALON,
+	BUSINESS_PLASTIC_SURGEON
+};
+
+new const gBusinessTypeNames[][24] =
+{
+	"Ammunation",
+	"Clothing shop",
+	"24/7",
+	"Barbershop",
+	"Beauty salon",
+	"Plastic surgeon"
+};
+
+enum bInfo
+{
+	Float:bX,
+	Float:bY,
+	Float:bZ,
+	bPrice,
+	BusinessType:bType,
+	bOwner,
+	bComponents,
+	bComponentPrice,
+	bEarnings
+};
+
+new BusinessData[MAX_BUSINESSES][bInfo] =
+{
+	{1368.5737, -1279.0925, 13.5469, 120000, BUSINESS_AMMUNATION, INVALID_PLAYER_ID, 0, 0, 0},
+	{2106.7893, -1795.8391, 13.5547, 90000, BUSINESS_CLOTHING, INVALID_PLAYER_ID, 0, 0, 0},
+	{1836.5348, -1682.5930, 13.3281, 60000, BUSINESS_247, INVALID_PLAYER_ID, 0, 0, 0},
+	{2037.5316, -1320.1406, 20.0469, 80000, BUSINESS_BARBERSHOP, INVALID_PLAYER_ID, 0, 0, 0},
+	{1041.9856, -1025.7467, 32.1016, 85000, BUSINESS_BEAUTY_SALON, INVALID_PLAYER_ID, 0, 0, 0},
+	{1154.5022, -1461.0933, 15.7969, 110000, BUSINESS_PLASTIC_SURGEON, INVALID_PLAYER_ID, 0, 0, 0}
+};
 
 new const gSkinList[] =
 {
@@ -80,20 +223,54 @@ enum pInfo
 {
 	bool:pLogged,
 	bool:pRegistering,
+	bool:pAuthChecked,
+	pAccountId,
+	bool:pTutorialDone,
+	pAuthStartTick,
+	pAuthRetries,
+	bool:pGarageInside,
+	bool:pGarageLocked,
 	pSkin,
+	pMoney,
 	pSelectedItem,
-	pSelectedAction,
+	invAction:pSelectedAction,
 	Float:pX,
 	Float:pY,
 	Float:pZ,
 	Float:pA,
 	pInterior,
 	pWorld,
+	pParts,
+	pLastTeleportTick,
+	pCrates,
+	pDeliveryBiz,
+	bool:pHasDelivery,
+	pAddiction,
+	pLastAddictionTick,
+	pDrugEffectEndTick,
+	pCarryLimit,
+	bool:pVehicleRegistered,
+	bool:pTaxesPaid,
+	bool:pInsured,
+	pNextBilling,
+	bool:pRadioVisible,
+	pRadioStation,
+	pPetActor,
+	pPetTask,
+	pPetTimer,
+	pMiniGame,
+	pMiniVehicle,
+	pMiniStep,
+	pMiniKeySequence[MINIGAME_KEYS],
+	pMiniTimer,
+	pLoginAttempts,
 	pPassHash[PASSWORD_LEN + 1]
 };
 new PlayerData[MAX_PLAYERS][pInfo];
 
 new MySQL:g_SQL;
+new bool:gDatabaseReady = false;
+new bool:gVehicleAlarmOn[MAX_VEHICLES];
 new bool:gAlprEnabled[MAX_PLAYERS];
 new gAlprTimer[MAX_PLAYERS];
 new bool:gHasLicense[MAX_PLAYERS];
@@ -101,12 +278,198 @@ new bool:gTaxDue[MAX_PLAYERS];
 new gStolenPlateCount;
 new gStolenPlates[MAX_STOLEN_PLATES][MAX_PLATE_LEN];
 
+new gVehicleLockLevel[MAX_VEHICLES];
+new gVehicleAlarmLevel[MAX_VEHICLES];
+new gVehicleMarketPrice[MAX_VEHICLES];
+new gVehicleManufacturer[MAX_VEHICLES];
+new gVehiclePlates[MAX_VEHICLES][MAX_PLATE_LEN];
+
+new const gMiniKeys[] =
+{
+	KEY_LEFT,
+	KEY_RIGHT,
+	KEY_JUMP,
+	KEY_SPRINT,
+	KEY_CROUCH
+};
+
+new const gMiniKeyNames[][] =
+{
+	"LEFT",
+	"RIGHT",
+	"JUMP",
+	"SPRINT",
+	"CROUCH"
+};
+
+new bool:gTaxiOnDuty[MAX_PLAYERS];
+new bool:gTaxiRequesting[MAX_PLAYERS];
+new TaxiDriverForCustomer[MAX_PLAYERS];
+new TaxiCustomerForDriver[MAX_PLAYERS];
+new TaxiFare[MAX_PLAYERS];
+new TaxiRentalEndTick[MAX_PLAYERS];
+new TaxiRentalNotifiedFive[MAX_PLAYERS];
+new TaxiRentalNotifiedOne[MAX_PLAYERS];
+new TaxiRentalVehicle[MAX_PLAYERS];
+new bool:TaxiMeterActive[MAX_PLAYERS];
+new TaxiMeterFareTotal[MAX_PLAYERS];
+new TaxiMeterElapsed[MAX_PLAYERS];
+
+new const gWantedList[] =
+{
+	411, 415, 451, 541, 560
+};
+
+new const gStationUrls[MAX_STATIONS][] =
+{
+	"https://streams.ilovemusic.de/iloveradio1.mp3",
+	"https://ice1.somafm.com/groovesalad-128-mp3",
+	"https://ice2.somafm.com/dronezone-128-mp3"
+};
+
 forward OnAccountCheck(playerid);
+forward OnAccountCreated(playerid);
+forward OnInventoryLoad(playerid);
+forward AutoSaveTick();
+forward OnStolenPlatesLoad();
+forward AuthTimeoutCheck(playerid);
+forward bool:HandleLspdCommand(playerid, const cmd[], const params[]);
+forward OnMiniGameTimeout(playerid);
 forward AlprScan(playerid);
+forward TaxiRentalTick();
+forward TaxiMeterTick();
+forward PetUpdate(playerid);
+forward OnAddictionTick();
+
+stock bool:HasCommandPrefix(const cmd[], const prefix[])
+{
+	return !strcmp(cmd, prefix, true, strlen(prefix));
+}
+
+stock LogAuthEvent(playerid, const event[], const detail[] = "")
+{
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+	if (detail[0] != '\0')
+	{
+		printf("[AUTH] %s(%d) %s: %s", name, playerid, event, detail);
+		return 1;
+	}
+	printf("[AUTH] %s(%d) %s", name, playerid, event);
+	return 1;
+}
+
+stock bool:RunSchemaQuery(const query[], const label[])
+{
+	mysql_query(g_SQL, query, false);
+	new err = mysql_errno(g_SQL);
+	if (err == 0)
+	{
+		return true;
+	}
+	if (err == 1060 || err == 1061 || err == 1091)
+	{
+		return true;
+	}
+	new errMsg[128];
+	mysql_error(errMsg, sizeof(errMsg), g_SQL);
+	printf("[MySQL] Schema error (%s): %d %s", label, err, errMsg);
+	return false;
+}
+
+stock bool:EnsureDatabaseSchema()
+{
+	new ok = 1;
+	ok = ok && RunSchemaQuery(
+		"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`salt` CHAR(24) NOT NULL DEFAULT '',`version` INT NOT NULL DEFAULT 1,`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`last_login` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`money` INT NOT NULL DEFAULT 0,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,`vehicle_registered` TINYINT(1) NOT NULL DEFAULT 0,`taxes_paid` TINYINT(1) NOT NULL DEFAULT 0,`insured` TINYINT(1) NOT NULL DEFAULT 0,`addiction` INT NOT NULL DEFAULT 0,`carry_limit` INT NOT NULL DEFAULT 8,`tutorial_done` TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+		"create_accounts"
+	);
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `salt` CHAR(24) NOT NULL DEFAULT ''", "add_salt");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `version` INT NOT NULL DEFAULT 1", "add_version");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP", "add_created_at");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `last_login` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP", "add_last_login");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `money` INT NOT NULL DEFAULT 0", "add_money");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `carry_limit` INT NOT NULL DEFAULT 8", "add_carry_limit");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `tutorial_done` TINYINT(1) NOT NULL DEFAULT 0", "add_tutorial_done");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `vehicle_registered` TINYINT(1) NOT NULL DEFAULT 0", "add_vehicle_registered");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `taxes_paid` TINYINT(1) NOT NULL DEFAULT 0", "add_taxes_paid");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `insured` TINYINT(1) NOT NULL DEFAULT 0", "add_insured");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `addiction` INT NOT NULL DEFAULT 0", "add_addiction");
+
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `inventory` (`account_id` INT NOT NULL,`item_id` INT NOT NULL,`amount` INT NOT NULL DEFAULT 0,PRIMARY KEY (`account_id`,`item_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_inventory");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `businesses` (`id` INT NOT NULL,`owner_id` INT NOT NULL DEFAULT 0,`components` INT NOT NULL DEFAULT 0,`component_price` INT NOT NULL DEFAULT 0,`earnings` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_businesses");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `properties` (`id` INT NOT NULL,`owner_id` INT NOT NULL DEFAULT 0,`locked` TINYINT(1) NOT NULL DEFAULT 0,`rentable` TINYINT(1) NOT NULL DEFAULT 0,`rent_price` INT NOT NULL DEFAULT 0,`tenant_id` INT NOT NULL DEFAULT 0,`entry_x` FLOAT NOT NULL DEFAULT 0,`entry_y` FLOAT NOT NULL DEFAULT 0,`entry_z` FLOAT NOT NULL DEFAULT 0,`entry_a` FLOAT NOT NULL DEFAULT 0,`entry_interior` INT NOT NULL DEFAULT 0,`entry_world` INT NOT NULL DEFAULT 0,`exit_x` FLOAT NOT NULL DEFAULT 0,`exit_y` FLOAT NOT NULL DEFAULT 0,`exit_z` FLOAT NOT NULL DEFAULT 0,`exit_a` FLOAT NOT NULL DEFAULT 0,`exit_interior` INT NOT NULL DEFAULT 0,`exit_world` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_properties");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `vehicles` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`owner_id` INT NOT NULL DEFAULT 0,`model` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 0,`y` FLOAT NOT NULL DEFAULT 0,`z` FLOAT NOT NULL DEFAULT 0,`a` FLOAT NOT NULL DEFAULT 0,`color1` INT NOT NULL DEFAULT 0,`color2` INT NOT NULL DEFAULT 0,`health` FLOAT NOT NULL DEFAULT 1000,`plate` VARCHAR(32) NOT NULL DEFAULT '',`registered` TINYINT(1) NOT NULL DEFAULT 0,`taxes_paid` TINYINT(1) NOT NULL DEFAULT 0,`insured` TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_vehicles");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `stolen_plates` (`plate` VARCHAR(32) NOT NULL,PRIMARY KEY (`plate`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_stolen_plates");
+	return ok != 0;
+}
+
+stock StartAccountCheck(playerid)
+{
+	if (!IsPlayerConnected(playerid))
+	{
+		return 0;
+	}
+	PlayerData[playerid][pAuthChecked] = false;
+	PlayerData[playerid][pAuthStartTick] = GetTickCount();
+
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+
+	new query[256];
+	mysql_format(g_SQL, query, sizeof(query),
+		"SELECT `id`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`money`,`carry_limit`,`tutorial_done` FROM `accounts` WHERE `name`='%e' LIMIT 1",
+		name
+	);
+	mysql_tquery(g_SQL, query, "OnAccountCheck", "i", playerid);
+	LogAuthEvent(playerid, "account_check_sent");
+	return 1;
+}
+
+stock bool:ParseTwoInts(const input[], &first, &second)
+{
+	new length = strlen(input);
+	new idx = 0;
+
+	while (idx < length && input[idx] <= ' ')
+	{
+		idx++;
+	}
+
+	if (idx >= length)
+	{
+		return false;
+	}
+
+	first = strval(input[idx]);
+	while (idx < length && input[idx] > ' ')
+	{
+		idx++;
+	}
+
+	while (idx < length && input[idx] <= ' ')
+	{
+		idx++;
+	}
+
+	if (idx >= length)
+	{
+		second = 0;
+		return true;
+	}
+
+	second = strval(input[idx]);
+	return true;
+}
+
+stock Float:floatmin(Float:a, Float:b)
+{
+	return (a < b) ? a : b;
+}
 
 enum itemInfo
 {
-	itemName[MAX_ITEM_NAME],
+	itemLabel[MAX_ITEM_NAME],
 	bool:itemConsumable
 };
 
@@ -161,7 +524,7 @@ stock GetItemName(itemid, name[], size = MAX_ITEM_NAME)
 		format(name, size, "Unknown");
 		return 0;
 	}
-	format(name, size, "%s", gItems[itemid][itemName]);
+	format(name, size, "%s", gItems[itemid][itemLabel]);
 	return 1;
 }
 
@@ -476,11 +839,210 @@ stock ShowVehicleItemsDialog(playerid, vehicleid)
 	return 1;
 }
 
+stock GetNearestBusiness(playerid, Float:radius = BUSINESS_BUY_RADIUS)
+{
+	new Float:px, Float:py, Float:pz;
+	GetPlayerPos(playerid, px, py, pz);
+
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		if (GetPlayerDistanceFromPoint(playerid, BusinessData[i][bX], BusinessData[i][bY], BusinessData[i][bZ]) <= radius)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+stock UpdateBusinessLabel(businessId)
+{
+	if (businessId < 0 || businessId >= MAX_BUSINESSES)
+	{
+		return 0;
+	}
+
+	new label[192];
+	new ownerName[MAX_PLAYER_NAME] = "For Sale";
+	if (BusinessData[businessId][bOwner] != INVALID_PLAYER_ID && IsPlayerConnected(BusinessData[businessId][bOwner]))
+	{
+		GetPlayerName(BusinessData[businessId][bOwner], ownerName, sizeof(ownerName));
+	}
+
+	if (BusinessData[businessId][bOwner] == INVALID_PLAYER_ID)
+	{
+		format(label, sizeof(label),
+			"%s\nPrice: $%d\nPress Y for details",
+			gBusinessTypeNames[_:BusinessData[businessId][bType]],
+			BusinessData[businessId][bPrice]
+		);
+	}
+	else
+	{
+		format(label, sizeof(label),
+			"%s\nOwner: %s\nComponents: %d",
+			gBusinessTypeNames[_:BusinessData[businessId][bType]],
+			ownerName,
+			BusinessData[businessId][bComponents]
+		);
+	}
+
+	if (BusinessLabels[businessId] != Text3D:0)
+	{
+		Delete3DTextLabel(BusinessLabels[businessId]);
+	}
+	BusinessLabels[businessId] = Create3DTextLabel(label, 0xF5E76AFF, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ] + 0.8, BUSINESS_LABEL_DISTANCE, 0, 0);
+	return 1;
+}
+
+stock ShowBusinessStatus(playerid, businessId)
+{
+	if (businessId < 0 || businessId >= MAX_BUSINESSES)
+	{
+		SendClientMessage(playerid, -1, "Invalid business.");
+		return 1;
+	}
+
+	new owner = BusinessData[businessId][bOwner];
+	new ownerName[MAX_PLAYER_NAME] = "None";
+	if (owner != INVALID_PLAYER_ID && IsPlayerConnected(owner))
+	{
+		GetPlayerName(owner, ownerName, sizeof(ownerName));
+	}
+
+	new message[144];
+	format(message, sizeof(message),
+		"Business %d (%s) | Owner: %s | Components: %d | Component price: $%d | Earnings: $%d",
+		businessId + 1,
+		gBusinessTypeNames[_:BusinessData[businessId][bType]],
+		ownerName,
+		BusinessData[businessId][bComponents],
+		BusinessData[businessId][bComponentPrice],
+		BusinessData[businessId][bEarnings]
+	);
+	SendClientMessage(playerid, -1, message);
+	return 1;
+}
+
+stock ClearDeliveryCheckpoint(playerid)
+{
+	if (PlayerData[playerid][pHasDelivery])
+	{
+		DisablePlayerCheckpoint(playerid);
+		PlayerData[playerid][pHasDelivery] = false;
+		PlayerData[playerid][pDeliveryBiz] = -1;
+	}
+	return 1;
+}
+
+stock bool:IsNearComponentWarehouse(playerid, Float:radius = 4.0)
+{
+	return GetPlayerDistanceFromPoint(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z) <= radius;
+}
+
+stock DeliverComponents(playerid, businessId)
+{
+	if (businessId < 0 || businessId >= MAX_BUSINESSES)
+	{
+		SendClientMessage(playerid, -1, "Usage: /deliverbiz [businessId]");
+		return 1;
+	}
+
+	if (PlayerData[playerid][pCrates] < 1)
+	{
+		SendClientMessage(playerid, -1, "You have no crates to deliver.");
+		return 1;
+	}
+
+	if (GetPlayerDistanceFromPoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ]) > BUSINESS_BUY_RADIUS)
+	{
+		SendClientMessage(playerid, -1, "You must be at the business to deliver.");
+		return 1;
+	}
+
+	new payout = PlayerData[playerid][pCrates] * BusinessData[businessId][bComponentPrice];
+	BusinessData[businessId][bComponents] += PlayerData[playerid][pCrates];
+	PlayerData[playerid][pCrates] = 0;
+
+	if (payout > 0)
+	{
+		GivePlayerMoney(playerid, payout);
+	}
+
+	SendClientMessage(playerid, -1, "Components delivered. Your crates have been unloaded.");
+	ShowBusinessStatus(playerid, businessId);
+	UpdateBusinessLabel(businessId);
+	return 1;
+}
+
+stock ReleasePlayerBusinesses(playerid)
+{
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		if (BusinessData[i][bOwner] == playerid)
+		{
+			BusinessData[i][bOwner] = INVALID_PLAYER_ID;
+			BusinessData[i][bComponents] = 0;
+			BusinessData[i][bEarnings] = 0;
+			UpdateBusinessLabel(i);
+		}
+	}
+	return 1;
+}
+
+enum eTeleportPoint
+{
+	Float:tX,
+	Float:tY,
+	Float:tZ,
+	Float:tA,
+	tInterior,
+	tWorld
+};
+
+enum eTeleport
+{
+	tEntry,
+	tExit
+};
+
+enum eTeleportPickup
+{
+	pEntry,
+	pExit
+};
+
+new const gTeleports[][eTeleport][eTeleportPoint] =
+{
+	{
+		{ 269.1355, -1002.5511, 29.3317, 90.0, 0, 0 },
+		{ -1152.1948, -1520.1556, 10.6328, 180.0, 0, 0 }
+	},
+	{
+		{ 372.0581, -1004.3589, 29.4138, 270.0, 0, 0 },
+		{ -769.2115, 323.9313, 211.3962, 90.0, 0, 0 }
+	},
+	{
+		{ -561.9644, 286.7379, 82.1764, 0.0, 0, 0 },
+		{ -176.4835, 502.6943, 137.4201, 270.0, 0, 0 }
+	}
+};
+
+new gTeleportPickups[sizeof(gTeleports)][eTeleportPickup];
+new Text3D:gTeleportLabels[sizeof(gTeleports)][eTeleportPickup];
+
 stock ResetPlayerData(playerid)
 {
 	PlayerData[playerid][pLogged] = false;
 	PlayerData[playerid][pRegistering] = false;
+	PlayerData[playerid][pAuthChecked] = false;
+	PlayerData[playerid][pAccountId] = INVALID_ACCOUNT_ID;
+	PlayerData[playerid][pTutorialDone] = false;
+	PlayerData[playerid][pAuthStartTick] = 0;
+	PlayerData[playerid][pAuthRetries] = 0;
+	PlayerData[playerid][pGarageInside] = false;
+	PlayerData[playerid][pGarageLocked] = false;
 	PlayerData[playerid][pSkin] = 0;
+	PlayerData[playerid][pMoney] = 0;
 	PlayerData[playerid][pSelectedItem] = -1;
 	PlayerData[playerid][pSelectedAction] = ACTION_NONE;
 	PlayerData[playerid][pX] = PREVIEW_X;
@@ -489,7 +1051,34 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pA] = PREVIEW_A;
 	PlayerData[playerid][pInterior] = 0;
 	PlayerData[playerid][pWorld] = 0;
+	PlayerData[playerid][pParts] = 0;
+	PlayerData[playerid][pLastTeleportTick] = 0;
+	PlayerData[playerid][pCrates] = 0;
+	PlayerData[playerid][pDeliveryBiz] = -1;
+	PlayerData[playerid][pHasDelivery] = false;
+	PlayerData[playerid][pAddiction] = 0;
+	PlayerData[playerid][pLastAddictionTick] = GetTickCount();
+	PlayerData[playerid][pDrugEffectEndTick] = 0;
+	PlayerData[playerid][pCarryLimit] = 8;
+	PlayerData[playerid][pVehicleRegistered] = false;
+	PlayerData[playerid][pTaxesPaid] = false;
+	PlayerData[playerid][pInsured] = false;
+	PlayerData[playerid][pNextBilling] = 0;
+	PlayerData[playerid][pRadioVisible] = true;
+	PlayerData[playerid][pRadioStation] = 0;
+	PlayerData[playerid][pPetActor] = INVALID_ACTOR_ID;
+	PlayerData[playerid][pPetTask] = PET_TASK_NONE;
+	PlayerData[playerid][pPetTimer] = 0;
+	PlayerData[playerid][pMiniGame] = MINIGAME_NONE;
+	PlayerData[playerid][pMiniVehicle] = INVALID_VEHICLE_ID;
+	PlayerData[playerid][pMiniStep] = 0;
+	PlayerData[playerid][pMiniTimer] = 0;
+	for (new i = 0; i < MINIGAME_KEYS; i++)
+	{
+		PlayerData[playerid][pMiniKeySequence][i] = 0;
+	}
 	PlayerData[playerid][pPassHash][0] = '\0';
+	PlayerData[playerid][pLoginAttempts] = 0;
 	for (new i = 0; i < MAX_ITEMS; i++)
 	{
 		PlayerItems[playerid][i] = 0;
@@ -501,6 +1090,350 @@ stock ResetPlayerData(playerid)
 	{
 		KillTimer(gAlprTimer[playerid]);
 		gAlprTimer[playerid] = 0;
+	}
+	gCinemaWatching[playerid] = false;
+	gTaxiOnDuty[playerid] = false;
+	gTaxiRequesting[playerid] = false;
+	TaxiDriverForCustomer[playerid] = INVALID_PLAYER_ID;
+	TaxiCustomerForDriver[playerid] = INVALID_PLAYER_ID;
+	TaxiFare[playerid] = TAXI_DEFAULT_FARE;
+	TaxiRentalEndTick[playerid] = 0;
+	TaxiRentalNotifiedFive[playerid] = false;
+	TaxiRentalNotifiedOne[playerid] = false;
+	TaxiRentalVehicle[playerid] = INVALID_VEHICLE_ID;
+	TaxiMeterActive[playerid] = false;
+	TaxiMeterFareTotal[playerid] = 0;
+	TaxiMeterElapsed[playerid] = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		PlayerItems[playerid][i] = 0;
+	}
+	return 1;
+}
+
+stock CancelMiniGame(playerid)
+{
+	if (PlayerData[playerid][pMiniTimer] != 0)
+	{
+		KillTimer(PlayerData[playerid][pMiniTimer]);
+		PlayerData[playerid][pMiniTimer] = 0;
+	}
+
+	PlayerData[playerid][pMiniGame] = MINIGAME_NONE;
+	PlayerData[playerid][pMiniVehicle] = INVALID_VEHICLE_ID;
+	PlayerData[playerid][pMiniStep] = 0;
+	return 1;
+}
+
+stock GetMiniGameDifficulty(vehicleid)
+{
+	new difficulty = gVehicleLockLevel[vehicleid] + gVehicleAlarmLevel[vehicleid];
+	difficulty += gVehicleMarketPrice[vehicleid] / 20000;
+	difficulty += gVehicleManufacturer[vehicleid];
+	if (difficulty < 1)
+	{
+		difficulty = 1;
+	}
+	return difficulty;
+}
+
+stock GetNearestVehicle(playerid, Float:radius)
+{
+	new Float:px, Float:py, Float:pz;
+	GetPlayerPos(playerid, px, py, pz);
+
+	new Float:bestDistance = radius;
+	new vehicleid = INVALID_VEHICLE_ID;
+
+	for (new i = 1; i < MAX_VEHICLES; i++)
+	{
+		if (!IsValidVehicle(i))
+		{
+			continue;
+		}
+
+		new Float:vx, Float:vy, Float:vz;
+		GetVehiclePos(i, vx, vy, vz);
+		new Float:distance = floatsqroot((vx - px) * (vx - px) + (vy - py) * (vy - py) + (vz - pz) * (vz - pz));
+		if (distance <= bestDistance)
+		{
+			bestDistance = distance;
+			vehicleid = i;
+		}
+	}
+	return vehicleid;
+}
+
+stock ShowMiniGameHelp(playerid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_LOCKPICK)
+	{
+		SendClientMessage(playerid, -1, "Lockpick: press the shown key sequence in order. Press H to repeat this help.");
+		SendClientMessage(playerid, -1, "Higher lock/alarm levels give you less time.");
+	}
+	else if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		SendClientMessage(playerid, -1, "Hotwire: match the key sequence before the timer runs out.");
+		SendClientMessage(playerid, -1, "Quick success starts the engine. Failure can trigger the alarm.");
+	}
+	return 1;
+}
+
+stock ShowMiniGamePrompt(playerid)
+{
+	new step = PlayerData[playerid][pMiniStep];
+	new keyIndex = PlayerData[playerid][pMiniKeySequence][step];
+
+	new message[96];
+	format(message, sizeof(message), "~w~Press ~y~%s~w~ (%d/%d)~n~~b~Press H for help", gMiniKeyNames[keyIndex], step + 1, MINIGAME_KEYS);
+	GameTextForPlayer(playerid, message, 3000, 3);
+	return 1;
+}
+
+stock StartMiniGame(playerid, vehicleid, minigameType)
+{
+	CancelMiniGame(playerid);
+
+	PlayerData[playerid][pMiniGame] = minigameType;
+	PlayerData[playerid][pMiniVehicle] = vehicleid;
+	PlayerData[playerid][pMiniStep] = 0;
+
+	for (new i = 0; i < MINIGAME_KEYS; i++)
+	{
+		PlayerData[playerid][pMiniKeySequence][i] = random(sizeof(gMiniKeys));
+	}
+
+	new difficulty = GetMiniGameDifficulty(vehicleid);
+	new timeLimit = 6500 - (difficulty * 400);
+	if (timeLimit < 2500)
+	{
+		timeLimit = 2500;
+	}
+	if (timeLimit > 9000)
+	{
+		timeLimit = 9000;
+	}
+
+	PlayerData[playerid][pMiniTimer] = SetTimerEx("OnMiniGameTimeout", timeLimit, false, "i", playerid);
+	ShowMiniGamePrompt(playerid);
+	new info[96];
+	format(info, sizeof(info), "Difficulty %d: lock %d, alarm %d.", difficulty, gVehicleLockLevel[vehicleid], gVehicleAlarmLevel[vehicleid]);
+	SendClientMessage(playerid, -1, info);
+	return 1;
+}
+
+stock FailMiniGame(playerid, const reason[])
+{
+	new vehicleid = PlayerData[playerid][pMiniVehicle];
+	if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+	{
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		SetVehicleParamsEx(vehicleid, engine, lights, 1, doors, bonnet, boot, objective);
+	}
+
+	SendClientMessage(playerid, -1, reason);
+	CancelMiniGame(playerid);
+	return 1;
+}
+
+stock CompleteMiniGame(playerid)
+{
+	new vehicleid = PlayerData[playerid][pMiniVehicle];
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_LOCKPICK)
+	{
+		if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+		{
+			new engine, lights, alarm, doors, bonnet, boot, objective;
+			GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+			SetVehicleParamsEx(vehicleid, engine, lights, 0, 0, bonnet, boot, objective);
+			GameTextForPlayer(playerid, "~g~Vehicle unlocked!", 2000, 3);
+		}
+	}
+	else if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		if (vehicleid != INVALID_VEHICLE_ID && IsValidVehicle(vehicleid))
+		{
+			new engine, lights, alarm, doors, bonnet, boot, objective;
+			GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+			SetVehicleParamsEx(vehicleid, 1, lights, 0, doors, bonnet, boot, objective);
+			GameTextForPlayer(playerid, "~g~Engine started!", 2000, 3);
+		}
+	}
+
+	CancelMiniGame(playerid);
+	return 1;
+}
+
+stock DestroyPet(playerid)
+{
+	if (PlayerData[playerid][pPetTimer] != 0)
+	{
+		KillTimer(PlayerData[playerid][pPetTimer]);
+		PlayerData[playerid][pPetTimer] = 0;
+	}
+
+	if (PlayerData[playerid][pPetActor] != INVALID_ACTOR_ID)
+	{
+		DestroyActor(PlayerData[playerid][pPetActor]);
+		PlayerData[playerid][pPetActor] = INVALID_ACTOR_ID;
+	}
+
+	PlayerData[playerid][pPetTask] = PET_TASK_NONE;
+	return 1;
+}
+
+stock CreatePet(playerid, petIndex)
+{
+	if (petIndex < 0 || petIndex >= sizeof(gPetSkins))
+	{
+		return 0;
+	}
+
+	DestroyPet(playerid);
+
+	new Float:x, Float:y, Float:z;
+	GetPlayerPos(playerid, x, y, z);
+
+	PlayerData[playerid][pPetActor] = CreateActor(gPetSkins[petIndex], x + 1.0, y, z, 0.0);
+	if (PlayerData[playerid][pPetActor] == INVALID_ACTOR_ID)
+	{
+		return 0;
+	}
+
+	SetActorVirtualWorld(PlayerData[playerid][pPetActor], GetPlayerVirtualWorld(playerid));
+	SetActorInvulnerable(PlayerData[playerid][pPetActor], true);
+
+	PlayerData[playerid][pPetTask] = PET_TASK_STAY;
+	PlayerData[playerid][pPetTimer] = SetTimerEx("PetUpdate", PET_UPDATE_MS, true, "i", playerid);
+	return 1;
+}
+
+stock SetPetTask(playerid, task)
+{
+	PlayerData[playerid][pPetTask] = task;
+	return 1;
+}
+
+stock ApplyPetAnimation(playerid, const animLib[], const animName[], Float:delta = 4.1, loop = 0, lockX = 1, lockY = 1, freeze = 0, time = 0)
+{
+	if (PlayerData[playerid][pPetActor] == INVALID_ACTOR_ID)
+	{
+		return 0;
+	}
+	ApplyActorAnimation(PlayerData[playerid][pPetActor], animLib, animName, delta, loop, lockX, lockY, freeze, time);
+	return 1;
+}
+
+stock PetExists(playerid)
+{
+	return PlayerData[playerid][pPetActor] != INVALID_ACTOR_ID;
+}
+
+stock GetPetIndex(const petName[])
+{
+	for (new i = 0; i < sizeof(gPetNames); i++)
+	{
+		if (!strcmp(petName, gPetNames[i], true))
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+stock ApplyScreenEffect(playerid, bool:strong)
+{
+	if (strong)
+	{
+		SetPlayerDrunkLevel(playerid, 30000);
+	}
+	else
+	{
+		SetPlayerDrunkLevel(playerid, 15000);
+	}
+	PlayerData[playerid][pDrugEffectEndTick] = GetTickCount() + (3 * 60 * 1000);
+	return 1;
+}
+
+stock Float:GetAddictionMultiplier(playerid)
+{
+	new Float:multiplier = 1.0 - (float(PlayerData[playerid][pAddiction]) * 0.01);
+	if (multiplier < 0.2)
+	{
+		multiplier = 0.2;
+	}
+	return multiplier;
+}
+
+stock IncreaseAddiction(playerid, bool:skipChance)
+{
+	if (skipChance && random(5) == 0)
+	{
+		return 1;
+	}
+	PlayerData[playerid][pAddiction] += 1;
+	if (PlayerData[playerid][pAddiction] > 100)
+	{
+		PlayerData[playerid][pAddiction] = 100;
+	}
+	return 1;
+}
+
+stock UseMarijuana(playerid)
+{
+	new Float:health;
+	GetPlayerHealth(playerid, health);
+
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:target = 115.0;
+	new Float:bonus = (target - health) * multiplier;
+	if (bonus < 0.0)
+	{
+		bonus = 0.0;
+	}
+	SetPlayerHealth(playerid, floatmin(200.0, health + bonus));
+	ApplyScreenEffect(playerid, false);
+	IncreaseAddiction(playerid, true);
+	return 1;
+}
+
+stock UseCocaine(playerid)
+{
+	new Float:health;
+	GetPlayerHealth(playerid, health);
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:bonus = 50.0 * multiplier;
+	SetPlayerHealth(playerid, floatmin(200.0, health + bonus));
+	ApplyScreenEffect(playerid, true);
+	IncreaseAddiction(playerid, false);
+	return 1;
+}
+
+stock UseHeroin(playerid)
+{
+	new Float:multiplier = GetAddictionMultiplier(playerid);
+	new Float:carryBonus = floatround(2.0 * multiplier, floatround_floor);
+	if (carryBonus < 1)
+	{
+		carryBonus = 1;
+	}
+	PlayerData[playerid][pCarryLimit] += carryBonus;
+	if (PlayerData[playerid][pCarryLimit] > 10)
+	{
+		PlayerData[playerid][pCarryLimit] = 10;
+	}
+	ApplyScreenEffect(playerid, true);
+	IncreaseAddiction(playerid, false);
+	return 1;
+}
+
+stock UseMethadone(playerid)
+{
+	PlayerData[playerid][pAddiction] -= 5;
+	if (PlayerData[playerid][pAddiction] < 0)
+	{
+		PlayerData[playerid][pAddiction] = 0;
 	}
 	return 1;
 }
@@ -515,6 +1448,69 @@ stock ToUpperStr(str[])
 		}
 	}
 	return 1;
+}
+
+stock GetVehicleNumberPlate(vehicleid, plate[], size = MAX_PLATE_LEN)
+{
+	if (vehicleid == INVALID_VEHICLE_ID)
+	{
+		plate[0] = '\0';
+		return 0;
+	}
+	if (gVehiclePlates[vehicleid][0] != '\0')
+	{
+		format(plate, size, "%s", gVehiclePlates[vehicleid]);
+		return 1;
+	}
+	format(plate, size, "VEH%04d", vehicleid);
+	return 1;
+}
+
+stock SetVehiclePlate(vehicleid, const plate[])
+{
+	if (vehicleid == INVALID_VEHICLE_ID)
+	{
+		return 0;
+	}
+	format(gVehiclePlates[vehicleid], sizeof(gVehiclePlates[]), "%s", plate);
+	SetVehicleNumberPlate(vehicleid, plate);
+	return 1;
+}
+
+stock GenerateVehiclePlate(vehicleid, plate[], size = MAX_PLATE_LEN)
+{
+	new randomSeed = random(9999);
+	format(plate, size, "SA%02d%02d", vehicleid % 100, randomSeed % 100);
+	return 1;
+}
+
+stock InitVehiclePlate(vehicleid)
+{
+	new plate[MAX_PLATE_LEN];
+	GenerateVehiclePlate(vehicleid, plate, sizeof(plate));
+	SetVehiclePlate(vehicleid, plate);
+	return 1;
+}
+
+stock GetVehicleOccupant(vehicleid, seat)
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i))
+		{
+			continue;
+		}
+		if (GetPlayerVehicleID(i) != vehicleid)
+		{
+			continue;
+		}
+		if (GetPlayerVehicleSeat(i) != seat)
+		{
+			continue;
+		}
+		return i;
+	}
+	return INVALID_PLAYER_ID;
 }
 
 stock IsPoliceVehicle(vehicleid)
@@ -555,16 +1551,33 @@ stock ParseCommand(const cmdtext[], cmd[], cmdlen, params[], paramslen)
 	return 1;
 }
 
-stock IsPlateStolen(const plate[])
+stock GetCommandToken(const cmdtext[], &index, token[], size)
+{
+	new len = strlen(cmdtext);
+	while (index < len && cmdtext[index] == ' ')
+	{
+		index++;
+	}
+
+	new i = 0;
+	while (index < len && cmdtext[index] != ' ' && i < size - 1)
+	{
+		token[i++] = cmdtext[index++];
+	}
+	token[i] = '\0';
+	return i;
+}
+
+stock bool:IsPlateStolen(const plate[])
 {
 	for (new i = 0; i < gStolenPlateCount; i++)
 	{
 		if (!strcmp(gStolenPlates[i], plate, false))
 		{
-			return 1;
+			return true;
 		}
 	}
-	return 0;
+	return false;
 }
 
 stock StartAlpr(playerid)
@@ -601,11 +1614,20 @@ stock AddStolenPlate(const plate[])
 
 	if (IsPlateStolen(plate))
 	{
-		return 1;
+		return 0;
 	}
 
 	format(gStolenPlates[gStolenPlateCount], MAX_PLATE_LEN, "%s", plate);
 	gStolenPlateCount++;
+	if (gDatabaseReady)
+	{
+		new query[128];
+		mysql_format(g_SQL, query, sizeof(query),
+			"INSERT IGNORE INTO `stolen_plates` (`plate`) VALUES ('%e')",
+			plate
+		);
+		mysql_tquery(g_SQL, query);
+	}
 	return 1;
 }
 
@@ -620,9 +1642,176 @@ stock RemoveStolenPlate(const plate[])
 				format(gStolenPlates[j], MAX_PLATE_LEN, "%s", gStolenPlates[j + 1]);
 			}
 			gStolenPlateCount--;
+			if (gDatabaseReady)
+			{
+				new query[128];
+				mysql_format(g_SQL, query, sizeof(query),
+					"DELETE FROM `stolen_plates` WHERE `plate`='%e'",
+					plate
+				);
+				mysql_tquery(g_SQL, query);
+			}
 			return 1;
 		}
 	}
+	return 0;
+}
+
+stock LoadStolenPlates()
+{
+	if (!gDatabaseReady)
+	{
+		return 0;
+	}
+	mysql_tquery(g_SQL, "SELECT `plate` FROM `stolen_plates`", "OnStolenPlatesLoad", "");
+	return 1;
+}
+
+stock bool:TaxiIsVehicleTaxi(vehicleid)
+{
+	if (vehicleid == INVALID_VEHICLE_ID)
+	{
+		return false;
+	}
+	new model = GetVehicleModel(vehicleid);
+	return (model == 420 || model == 438);
+}
+
+stock TaxiResetRequestForCustomer(customerid)
+{
+	new driverid = TaxiDriverForCustomer[customerid];
+	if (driverid != INVALID_PLAYER_ID)
+	{
+		TaxiCustomerForDriver[driverid] = INVALID_PLAYER_ID;
+		DisablePlayerCheckpoint(driverid);
+	}
+	gTaxiRequesting[customerid] = false;
+	TaxiDriverForCustomer[customerid] = INVALID_PLAYER_ID;
+	return 1;
+}
+
+stock TaxiResetRequestForDriver(driverid)
+{
+	new customerid = TaxiCustomerForDriver[driverid];
+	if (customerid != INVALID_PLAYER_ID)
+	{
+		TaxiDriverForCustomer[customerid] = INVALID_PLAYER_ID;
+		gTaxiRequesting[customerid] = false;
+	}
+	TaxiCustomerForDriver[driverid] = INVALID_PLAYER_ID;
+	DisablePlayerCheckpoint(driverid);
+	return 1;
+}
+
+stock TaxiSendToOnDuty(const message[])
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (IsPlayerConnected(i) && gTaxiOnDuty[i])
+		{
+			SendClientMessage(i, -1, message);
+		}
+	}
+	return 1;
+}
+
+stock TaxiMinutesRemaining(playerid)
+{
+	if (TaxiRentalEndTick[playerid] == 0)
+	{
+		return 0;
+	}
+
+	new remaining = TaxiRentalEndTick[playerid] - GetTickCount();
+	if (remaining <= 0)
+	{
+		return 0;
+	}
+	return (remaining + 59999) / 60000;
+}
+
+stock TaxiStartMeter(driverid)
+{
+	TaxiMeterActive[driverid] = true;
+	TaxiMeterFareTotal[driverid] = 0;
+	TaxiMeterElapsed[driverid] = 0;
+	SendClientMessage(driverid, -1, "Taxi meter started.");
+	return 1;
+}
+
+stock TaxiStopMeter(driverid)
+{
+	if (!TaxiMeterActive[driverid])
+	{
+		return 1;
+	}
+	TaxiMeterActive[driverid] = false;
+	TaxiMeterElapsed[driverid] = 0;
+	new message[64];
+	format(message, sizeof(message), "Taxi meter stopped. Total fare: $%d.", TaxiMeterFareTotal[driverid]);
+	SendClientMessage(driverid, -1, message);
+	return 1;
+}
+
+stock PlayStationForPlayer(playerid, station)
+{
+	if (station < 1 || station > MAX_STATIONS)
+	{
+		new message[64];
+		format(message, sizeof(message), "Station must be between 1 and %d.", MAX_STATIONS);
+		SendClientMessage(playerid, -1, message);
+		return 0;
+	}
+
+	if (gStationUrls[station - 1][0] == '\0')
+	{
+		SendClientMessage(playerid, -1, "Station unavailable.");
+		return 0;
+	}
+
+	PlayAudioStreamForPlayer(playerid, gStationUrls[station - 1]);
+	PlayerData[playerid][pRadioStation] = station;
+	return 1;
+}
+
+stock StopStationForPlayer(playerid)
+{
+	StopAudioStreamForPlayer(playerid);
+	PlayerData[playerid][pRadioStation] = 0;
+	return 1;
+}
+
+stock GetCommandArg(const cmdtext[], argIndex, arg[], argSize)
+{
+	new idx = 0;
+	new start = 0;
+	new len = strlen(cmdtext);
+	new currentArg = -1;
+
+	while (idx <= len)
+	{
+		if (cmdtext[idx] == ' ' || cmdtext[idx] == '\0')
+		{
+			if (idx > start)
+			{
+				currentArg++;
+				if (currentArg == argIndex)
+				{
+					new copyLen = idx - start;
+					if (copyLen >= argSize)
+					{
+						copyLen = argSize - 1;
+					}
+					strmid(arg, cmdtext, start, start + copyLen, argSize);
+					return 1;
+				}
+			}
+			start = idx + 1;
+		}
+		idx++;
+	}
+
+	arg[0] = '\0';
 	return 0;
 }
 
@@ -635,6 +1824,211 @@ stock ShowLoginDialog(playerid, const message[] = "Enter your password:")
 stock ShowRegisterDialog(playerid, const message[] = "Create a password for this account:")
 {
 	ShowPlayerDialog(playerid, DIALOG_REGISTER, DIALOG_STYLE_PASSWORD, "Register", message, "Register", "Quit");
+	return 1;
+}
+
+stock ShowGarageInfoDialog(playerid)
+{
+	new info[512];
+	info[0] = EOS;
+	strcat(info, "Garages are owned by players or organizations.\n");
+	strcat(info, "A mechanic can repair, mod, or paint vehicles, plus install locks and alarms.\n");
+	strcat(info, "\n");
+	strcat(info, "Commands:\n");
+	strcat(info, "/repair /paint /lock /alarm /mod\n");
+	strcat(info, "/chop /wanted /craft\n");
+	strcat(info, "\n");
+	strcat(info, "Illegal garage features:\n");
+	strcat(info, "- Chop a vehicle to receive car parts.\n");
+	strcat(info, "- View the wanted cars list.");
+	ShowPlayerDialog(
+		playerid,
+		DIALOG_GARAGE_INFO,
+		DIALOG_STYLE_MSGBOX,
+		"Garage & Chop Shops",
+		info,
+		"Close",
+		""
+	);
+	return 1;
+}
+
+stock ShowGarageHelp(playerid)
+{
+	new message[768];
+	strcat(message, "Residential garages commands:\n\n");
+	strcat(message, "Press Y - Enter/exit an unlocked garage while on foot.\n");
+	strcat(message, "Press K - Enter/exit an unlocked garage while on foot or in a vehicle.\n");
+	strcat(message, "/plock - Lock or unlock a garage (tenants only).\n");
+	strcat(message, "/pentrance - Change the inside entrance to your position.\n");
+	strcat(message, "/pinv - Check the inventory (tenants only).\n");
+	strcat(message, "/ptitem(s) - Remove items; add S for as many as possible.\n");
+	strcat(message, "/ppitem(s) - Place items; add S for as many as possible.\n");
+	strcat(message, "/outfit - Open saved outfit menu (tenants only).\n");
+	strcat(message, "/pmenu - Info menu, inventory, and construction permissions.\n");
+	strcat(message, "/pinfo - Show garage info (owner only).\n");
+	strcat(message, "/setrentable - Make garage rentable; blank to stop.\n");
+	strcat(message, "/rent - Rent a garage.\n");
+	strcat(message, "/stoprent - Stop renting (use outside door).\n");
+	strcat(message, "/tenants - Check tenants (owner only).\n");
+	strcat(message, "/kicktenant - Remove a tenant (owner only).\n");
+	strcat(message, "/evictall - Remove all tenants (owner only).\n");
+	strcat(message, "/pdeposit - Deposit money (owner only).\n");
+	strcat(message, "/pwithdrawl - Withdraw money (owner only).\n");
+	strcat(message, "/sellproperty - Sell garage back to market (owner only).\n");
+	strcat(message, "/playersellproperty - Sell garage to a player (owner only).\n");
+	ShowPlayerDialog(playerid, DIALOG_GARAGE_HELP, DIALOG_STYLE_MSGBOX, "Garage Help", message, "Close", "");
+	return 1;
+}
+
+stock ShowHelpDialog(playerid)
+{
+	new message[768];
+	message[0] = EOS;
+	strcat(message, "Quick commands:\n");
+	strcat(message, "/login /register\n");
+	strcat(message, "/inv - inventory\n");
+	strcat(message, "/taxirent - rent a taxi\n");
+	strcat(message, "/taxistart /fare /taximeter /taxidone\n");
+	strcat(message, "/buycrates /deliverbiz - delivery work\n");
+	strcat(message, "/dmv - registration & insurance\n");
+	strcat(message, "/businesses - list businesses\n");
+	strcat(message, "/garagehelp - garage info\n");
+	strcat(message, "/todo - nearest activity\n");
+	strcat(message, "/warehouse - warehouse checkpoint\n");
+	strcat(message, "/enter /exit - property teleports\n");
+	strcat(message, "\nNext step:\n");
+	strcat(message, "Try /taxirent or visit the warehouse marker.");
+	ShowPlayerDialog(playerid, DIALOG_HELP, DIALOG_STYLE_MSGBOX, "Help & Next Steps", message, "Close", "");
+	return 1;
+}
+
+stock ShowTutorialDialog(playerid)
+{
+	new message[512];
+	message[0] = EOS;
+	strcat(message, "Welcome! Here's how to get started:\n\n");
+	strcat(message, "1) Use /help for the command list.\n");
+	strcat(message, "2) Use /taxirent to rent a taxi and /taxistart to go on duty.\n");
+	strcat(message, "3) Use /buycrates at the warehouse and /deliverbiz to earn money.\n\n");
+	strcat(message, "Use /todo anytime to see the nearest activity.");
+	ShowPlayerDialog(playerid, DIALOG_TUTORIAL, DIALOG_STYLE_MSGBOX, "Getting Started", message, "Got it", "");
+	return 1;
+}
+
+stock GiveStarterKit(playerid)
+{
+	AddPlayerItem(playerid, 0, 2);
+	AddPlayerItem(playerid, 1, 1);
+	AddPlayerItem(playerid, 4, 1);
+	if (GetPlayerMoney(playerid) < STARTER_CASH)
+	{
+		GivePlayerMoney(playerid, STARTER_CASH - GetPlayerMoney(playerid));
+	}
+	PlayerData[playerid][pTutorialDone] = true;
+	if (PlayerData[playerid][pAccountId] != INVALID_ACCOUNT_ID)
+	{
+		SavePlayerState(playerid);
+	}
+	return 1;
+}
+
+stock ShowNextStepHint(playerid)
+{
+	if (!PlayerData[playerid][pLogged])
+	{
+		SendClientMessage(playerid, -1, "Log in first with /login or /register.");
+		return 1;
+	}
+
+	new Float:nearestDist = 999999.0;
+	new nearestLabel[64];
+	new Float:dist;
+
+	format(nearestLabel, sizeof(nearestLabel), "component warehouse");
+	dist = GetPlayerDistanceFromPoint(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z);
+	if (dist < nearestDist)
+	{
+		nearestDist = dist;
+		format(nearestLabel, sizeof(nearestLabel), "component warehouse");
+	}
+
+	dist = GetPlayerDistanceFromPoint(playerid, GARAGE_X, GARAGE_Y, GARAGE_Z);
+	if (dist < nearestDist)
+	{
+		nearestDist = dist;
+		format(nearestLabel, sizeof(nearestLabel), "garage");
+	}
+
+	dist = GetPlayerDistanceFromPoint(playerid, CHOP_X, CHOP_Y, CHOP_Z);
+	if (dist < nearestDist)
+	{
+		nearestDist = dist;
+		format(nearestLabel, sizeof(nearestLabel), "chop shop");
+	}
+
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		dist = GetPlayerDistanceFromPoint(playerid, BusinessData[i][bX], BusinessData[i][bY], BusinessData[i][bZ]);
+		if (dist < nearestDist)
+		{
+			nearestDist = dist;
+			format(nearestLabel, sizeof(nearestLabel), "business %d (%s)", i + 1, gBusinessTypeNames[_:BusinessData[i][bType]]);
+		}
+	}
+
+	new message[128];
+	format(message, sizeof(message), "Nearest activity: %s (%.0fm).", nearestLabel, nearestDist);
+	SendClientMessage(playerid, -1, message);
+	SendClientMessage(playerid, -1, "Try /taxirent for taxi work or /buycrates at the warehouse.");
+	return 1;
+}
+
+stock bool:IsPlayerAtGarage(playerid)
+{
+	return bool:(IsPlayerInRangeOfPoint(playerid, GARAGE_RADIUS, GARAGE_X, GARAGE_Y, GARAGE_Z));
+}
+
+stock bool:IsPlayerAtChopShop(playerid)
+{
+	return bool:(IsPlayerInRangeOfPoint(playerid, CHOP_RADIUS, CHOP_X, CHOP_Y, CHOP_Z));
+}
+
+stock bool:EnsureVehicleAccess(playerid)
+{
+	if (!IsPlayerInAnyVehicle(playerid))
+	{
+		SendClientMessage(playerid, -1, "You need to be in a vehicle.");
+		return false;
+	}
+	return true;
+}
+
+stock bool:EnsureGarageAccess(playerid)
+{
+	if (!IsPlayerAtGarage(playerid))
+	{
+		SendClientMessage(playerid, -1, "You need to be at a garage to use this.");
+		return false;
+	}
+	return true;
+}
+
+stock bool:EnsureChopAccess(playerid)
+{
+	if (!IsPlayerAtChopShop(playerid))
+	{
+		SendClientMessage(playerid, -1, "You need to be at a chop shop to use this.");
+		return false;
+	}
+	return true;
+}
+
+stock ToggleVehicleLock(vehicleid, bool:locked)
+{
+	new engine, lights, alarm, doors, bonnet, boot, objective;
+	GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+	SetVehicleParamsEx(vehicleid, engine, lights, alarm, locked, bonnet, boot, objective);
 	return 1;
 }
 
@@ -765,6 +2159,124 @@ stock ShowCinemaStatus(playerid)
 	return 1;
 }
 
+stock ShowDmvDialog(playerid)
+{
+	new body[256];
+	format(body, sizeof(body),
+		"Vehicle registration: %s\nRoad taxes: %s\nInsurance: %s\n\nSelect an option:",
+		PlayerData[playerid][pVehicleRegistered] ? ("Registered") : ("Not registered"),
+		PlayerData[playerid][pTaxesPaid] ? ("Paid") : ("Unpaid"),
+		PlayerData[playerid][pInsured] ? ("Insured") : ("Uninsured")
+	);
+	ShowPlayerDialog(playerid, DIALOG_DMV, DIALOG_STYLE_LIST, "Department of Motor Vehicles", body,
+		"Select", "Close");
+	return 1;
+}
+
+stock ShowDmvPaymentDialog(playerid, const actionLabel[], cost)
+{
+	new body[128];
+	format(body, sizeof(body), "%s\nCost: $%d\n\nProceed with payment?", actionLabel, cost);
+	ShowPlayerDialog(playerid, DIALOG_DMV_PAY, DIALOG_STYLE_MSGBOX, "DMV Payment", body,
+		"Pay", "Back");
+	return 1;
+}
+
+stock SavePlayerDmvStatus(playerid)
+{
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+
+	new query[256];
+	if (PlayerData[playerid][pAccountId] != INVALID_ACCOUNT_ID)
+	{
+		mysql_format(g_SQL, query, sizeof(query),
+			"UPDATE `accounts` SET `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d WHERE `id`=%d LIMIT 1",
+			PlayerData[playerid][pVehicleRegistered],
+			PlayerData[playerid][pTaxesPaid],
+			PlayerData[playerid][pInsured],
+			PlayerData[playerid][pAccountId]
+		);
+	}
+	else
+	{
+		mysql_format(g_SQL, query, sizeof(query),
+			"UPDATE `accounts` SET `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d WHERE `name`='%e' LIMIT 1",
+			PlayerData[playerid][pVehicleRegistered],
+			PlayerData[playerid][pTaxesPaid],
+			PlayerData[playerid][pInsured],
+			name
+		);
+	}
+	mysql_tquery(g_SQL, query);
+	return 1;
+}
+
+stock ChargePlayer(playerid, amount)
+{
+	if (GetPlayerMoney(playerid) < amount)
+	{
+		SendClientMessage(playerid, -1, "You don't have enough cash for this payment.");
+		return 0;
+	}
+	GivePlayerMoney(playerid, -amount);
+	return 1;
+}
+
+stock GetRegistrationCost()
+{
+	return floatround(DMV_VEHICLE_VALUE * DMV_REGISTRATION_RATE);
+}
+
+stock GetTaxCost()
+{
+	return floatround(DMV_VEHICLE_VALUE * DMV_TAX_RATE);
+}
+
+stock GetInsuranceCost()
+{
+	return floatround(DMV_VEHICLE_VALUE * DMV_INSURANCE_RATE);
+}
+
+stock HandleDmvBilling(playerid)
+{
+	if (!PlayerData[playerid][pLogged])
+	{
+		return 1;
+	}
+
+	if (PlayerData[playerid][pInsured])
+	{
+		new insuranceFee = floatround(DMV_VEHICLE_VALUE * 0.01);
+		if (!ChargePlayer(playerid, insuranceFee))
+		{
+			PlayerData[playerid][pInsured] = false;
+			SendClientMessage(playerid, -1, "Insurance payment failed; your insurance lapsed.");
+		}
+	}
+
+	if (PlayerData[playerid][pTaxesPaid])
+	{
+		new taxBill = GetTaxCost();
+		if (!ChargePlayer(playerid, taxBill))
+		{
+			PlayerData[playerid][pTaxesPaid] = false;
+			SendClientMessage(playerid, -1, "Road taxes unpaid; your vehicle is now flagged.");
+		}
+	}
+
+	SavePlayerDmvStatus(playerid);
+	PlayerData[playerid][pNextBilling] = SetTimerEx("OnDmvBilling", DMV_BILLING_INTERVAL, false, "i", playerid);
+	return 1;
+}
+
+forward OnDmvBilling(playerid);
+
+public OnDmvBilling(playerid)
+{
+	return HandleDmvBilling(playerid);
+}
+
 stock RegisterPlayer(playerid)
 {
 	new name[MAX_PLAYER_NAME];
@@ -772,14 +2284,23 @@ stock RegisterPlayer(playerid)
 
 	new query[256];
 	mysql_format(g_SQL, query, sizeof(query),
-		"INSERT INTO `accounts` (`name`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`) VALUES ('%e','%e',%d,%.4f,%.4f,%.4f,%.4f,%d,%d)",
+		"INSERT INTO `accounts` (`name`,`password`,`version`,`created_at`,`last_login`,`money`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`carry_limit`,`tutorial_done`) VALUES ('%e','%e',%d,NOW(),NOW(),%d,%d,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d)",
 		name,
 		PlayerData[playerid][pPassHash],
+		ACCOUNT_VERSION,
+		STARTER_CASH,
 		PlayerData[playerid][pSkin],
 		PREVIEW_X, PREVIEW_Y, PREVIEW_Z, PREVIEW_A,
-		0, 0
+		0, 0,
+		PlayerData[playerid][pVehicleRegistered],
+		PlayerData[playerid][pTaxesPaid],
+		PlayerData[playerid][pInsured],
+		PlayerData[playerid][pAddiction],
+		PlayerData[playerid][pCarryLimit],
+		0
 	);
-	mysql_tquery(g_SQL, query);
+	mysql_tquery(g_SQL, query, "OnAccountCreated", "i", playerid);
+	LogAuthEvent(playerid, "register_insert");
 	return 1;
 }
 
@@ -795,14 +2316,273 @@ stock SavePlayerPosition(playerid)
 	new interior = GetPlayerInterior(playerid);
 	new world = GetPlayerVirtualWorld(playerid);
 	new skin = GetPlayerSkin(playerid);
+	new money = GetPlayerMoney(playerid);
+	PlayerData[playerid][pMoney] = money;
 
 	new query[256];
+	if (PlayerData[playerid][pAccountId] != INVALID_ACCOUNT_ID)
+	{
+		mysql_format(g_SQL, query, sizeof(query),
+			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `id`=%d LIMIT 1",
+			skin, x, y, z, a, interior, world,
+			PlayerData[playerid][pVehicleRegistered],
+			PlayerData[playerid][pTaxesPaid],
+			PlayerData[playerid][pInsured],
+			PlayerData[playerid][pAddiction],
+			money,
+			PlayerData[playerid][pCarryLimit],
+			PlayerData[playerid][pTutorialDone],
+			PlayerData[playerid][pAccountId]
+		);
+	}
+	else
+	{
+		mysql_format(g_SQL, query, sizeof(query),
+			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `name`='%e' LIMIT 1",
+			skin, x, y, z, a, interior, world,
+			PlayerData[playerid][pVehicleRegistered],
+			PlayerData[playerid][pTaxesPaid],
+			PlayerData[playerid][pInsured],
+			PlayerData[playerid][pAddiction],
+			money,
+			PlayerData[playerid][pCarryLimit],
+			PlayerData[playerid][pTutorialDone],
+			name
+		);
+	}
+	mysql_tquery(g_SQL, query);
+	LogAuthEvent(playerid, "save_position");
+	return 1;
+}
+
+stock UpdateLastLogin(playerid)
+{
+	if (PlayerData[playerid][pAccountId] == INVALID_ACCOUNT_ID)
+	{
+		return 0;
+	}
+	new query[128];
 	mysql_format(g_SQL, query, sizeof(query),
-		"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d WHERE `name`='%e' LIMIT 1",
-		skin, x, y, z, a, interior, world, name
+		"UPDATE `accounts` SET `last_login`=NOW() WHERE `id`=%d LIMIT 1",
+		PlayerData[playerid][pAccountId]
 	);
 	mysql_tquery(g_SQL, query);
+	LogAuthEvent(playerid, "last_login_update");
 	return 1;
+}
+
+stock SavePlayerInventory(playerid)
+{
+	if (PlayerData[playerid][pAccountId] == INVALID_ACCOUNT_ID)
+	{
+		return 0;
+	}
+
+	new query[512];
+	mysql_format(g_SQL, query, sizeof(query),
+		"DELETE FROM `inventory` WHERE `account_id`=%d",
+		PlayerData[playerid][pAccountId]
+	);
+	mysql_tquery(g_SQL, query);
+
+	new insert[512];
+	insert[0] = EOS;
+	new added = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1)
+		{
+			continue;
+		}
+		new line[64];
+		format(line, sizeof(line), "%s(%d,%d,%d)",
+			added == 0 ? "INSERT INTO `inventory` (`account_id`,`item_id`,`amount`) VALUES " : ",",
+			PlayerData[playerid][pAccountId],
+			i,
+			PlayerItems[playerid][i]
+		);
+		strcat(insert, line);
+		added++;
+	}
+	if (added > 0)
+	{
+		mysql_tquery(g_SQL, insert);
+	}
+	LogAuthEvent(playerid, "save_inventory");
+	return 1;
+}
+
+stock LoadPlayerInventory(playerid)
+{
+	if (PlayerData[playerid][pAccountId] == INVALID_ACCOUNT_ID)
+	{
+		return 0;
+	}
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		PlayerItems[playerid][i] = 0;
+	}
+	new query[128];
+	mysql_format(g_SQL, query, sizeof(query),
+		"SELECT `item_id`,`amount` FROM `inventory` WHERE `account_id`=%d",
+		PlayerData[playerid][pAccountId]
+	);
+	mysql_tquery(g_SQL, query, "OnInventoryLoad", "i", playerid);
+	LogAuthEvent(playerid, "load_inventory");
+	return 1;
+}
+
+stock SavePlayerState(playerid)
+{
+	if (!PlayerData[playerid][pLogged])
+	{
+		return 0;
+	}
+	SavePlayerPosition(playerid);
+	SavePlayerInventory(playerid);
+	SavePlayerDmvStatus(playerid);
+	return 1;
+}
+
+stock TeleportPlayerToPoint(playerid, const point[eTeleportPoint])
+{
+	SetPlayerInterior(playerid, point[tInterior]);
+	SetPlayerVirtualWorld(playerid, point[tWorld]);
+	SetPlayerPos(playerid, point[tX], point[tY], point[tZ]);
+	SetPlayerFacingAngle(playerid, point[tA]);
+	return 1;
+}
+
+stock TryPropertyTeleport(playerid, index, bool:fromEntry)
+{
+	if (GetTickCount() - PlayerData[playerid][pLastTeleportTick] < TELEPORT_COOLDOWN_MS)
+	{
+		return 0;
+	}
+
+	if (!PlayerData[playerid][pLogged])
+	{
+		return 0;
+	}
+
+	if (index < 0 || index >= sizeof(gTeleports))
+	{
+		return 0;
+	}
+
+	if (fromEntry)
+	{
+		PlayerData[playerid][pLastTeleportTick] = GetTickCount();
+		TeleportPlayerToPoint(playerid, gTeleports[index][tExit]);
+		SendClientMessage(playerid, -1, "You use the property teleport.");
+		return 1;
+	}
+
+	PlayerData[playerid][pLastTeleportTick] = GetTickCount();
+	TeleportPlayerToPoint(playerid, gTeleports[index][tEntry]);
+	SendClientMessage(playerid, -1, "You use the property teleport.");
+	return 1;
+}
+
+stock CreatePropertyTeleports()
+{
+	for (new i = 0; i < sizeof(gTeleports); i++)
+	{
+		gTeleportPickups[i][pEntry] = CreatePickup(
+			TELEPORT_PICKUP_MODEL,
+			1,
+			gTeleports[i][tEntry][tX],
+			gTeleports[i][tEntry][tY],
+			gTeleports[i][tEntry][tZ],
+			gTeleports[i][tEntry][tWorld]
+		);
+		gTeleportPickups[i][pExit] = CreatePickup(
+			TELEPORT_PICKUP_MODEL,
+			1,
+			gTeleports[i][tExit][tX],
+			gTeleports[i][tExit][tY],
+			gTeleports[i][tExit][tZ],
+			gTeleports[i][tExit][tWorld]
+		);
+
+		gTeleportLabels[i][pEntry] = _:Create3DTextLabel(
+			"Property Entrance\nUse /enter.",
+			0xFFFFFFFF,
+			gTeleports[i][tEntry][tX],
+			gTeleports[i][tEntry][tY],
+			gTeleports[i][tEntry][tZ] + 0.8,
+			TELEPORT_LABEL_DISTANCE,
+			0,
+			gTeleports[i][tEntry][tWorld]
+		);
+		gTeleportLabels[i][pExit] = _:Create3DTextLabel(
+			"Property Exit\nUse /exit.",
+			0xFFFFFFFF,
+			gTeleports[i][tExit][tX],
+			gTeleports[i][tExit][tY],
+			gTeleports[i][tExit][tZ] + 0.8,
+			TELEPORT_LABEL_DISTANCE,
+			0,
+			gTeleports[i][tExit][tWorld]
+		);
+	}
+	return 1;
+}
+
+stock DestroyPropertyTeleports()
+{
+	for (new i = 0; i < sizeof(gTeleports); i++)
+	{
+		if (gTeleportPickups[i][pEntry] != 0)
+		{
+			DestroyPickup(gTeleportPickups[i][pEntry]);
+			gTeleportPickups[i][pEntry] = 0;
+		}
+		if (gTeleportPickups[i][pExit] != 0)
+		{
+			DestroyPickup(gTeleportPickups[i][pExit]);
+			gTeleportPickups[i][pExit] = 0;
+		}
+
+		if (Text3D:gTeleportLabels[i][pEntry] != Text3D:0)
+		{
+			Delete3DTextLabel(Text3D:gTeleportLabels[i][pEntry]);
+			gTeleportLabels[i][pEntry] = 0;
+		}
+		if (Text3D:gTeleportLabels[i][pExit] != Text3D:0)
+		{
+			Delete3DTextLabel(Text3D:gTeleportLabels[i][pExit]);
+			gTeleportLabels[i][pExit] = 0;
+		}
+	}
+	return 1;
+}
+
+stock bool:IsPlayerNearTeleport(playerid, index, bool:entry)
+{
+	new interior = GetPlayerInterior(playerid);
+	new world = GetPlayerVirtualWorld(playerid);
+
+	if (entry)
+	{
+		if (interior != gTeleports[index][tEntry][tInterior] || world != gTeleports[index][tEntry][tWorld])
+		{
+			return false;
+		}
+		return bool:(IsPlayerInRangeOfPoint(playerid, TELEPORT_RADIUS,
+			gTeleports[index][tEntry][tX],
+			gTeleports[index][tEntry][tY],
+			gTeleports[index][tEntry][tZ]));
+	}
+
+	if (interior != gTeleports[index][tExit][tInterior] || world != gTeleports[index][tExit][tWorld])
+	{
+		return false;
+	}
+	return bool:(IsPlayerInRangeOfPoint(playerid, TELEPORT_RADIUS,
+		gTeleports[index][tExit][tX],
+		gTeleports[index][tExit][tY],
+		gTeleports[index][tExit][tZ]));
 }
 
 main()
@@ -814,31 +2594,89 @@ public OnGameModeInit()
 {
 	SetGameModeText("MySQL Accounts");
 	UsePlayerPedAnims();
+	gStolenPlateCount = 0;
+	SetTimer("TaxiRentalTick", 60000, true);
+	SetTimer("TaxiMeterTick", 1000, true);
+	SetTimer("OnAddictionTick", DRUG_EFFECT_INTERVAL, true);
+	SetTimer("AutoSaveTick", AUTO_SAVE_INTERVAL_MS, true);
 	for (new i = 0; i < MAX_DROPS; i++)
 	{
 		Drops[i][dropActive] = false;
 		Drops[i][dropPickupId] = -1;
 	}
-	gStolenPlateCount = 0;
+
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		BusinessData[i][bOwner] = INVALID_PLAYER_ID;
+		BusinessData[i][bComponents] = BUSINESS_COMPONENTS_DEFAULT;
+		BusinessData[i][bComponentPrice] = 750;
+		BusinessData[i][bEarnings] = 0;
+		BusinessPickups[i] = CreatePickup(1274, 1, BusinessData[i][bX], BusinessData[i][bY], BusinessData[i][bZ]);
+		UpdateBusinessLabel(i);
+	}
+
+	WarehousePickup = CreatePickup(1239, 1, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z);
+	CreatePropertyTeleports();
 
 	for (new i = 0; i < sizeof(gSkinList); i++)
 	{
 		AddPlayerClass(gSkinList[i], PREVIEW_X, PREVIEW_Y, PREVIEW_Z, PREVIEW_A, 0, 0, 0, 0, 0, 0);
 	}
 
+	CreatePickup(1239, 1, GARAGE_X, GARAGE_Y, GARAGE_Z, 0);
+	CreatePickup(1239, 1, CHOP_X, CHOP_Y, CHOP_Z, 0);
+
+	new vehicleid = CreateVehicle(411, PREVIEW_X + 6.0, PREVIEW_Y + 4.0, PREVIEW_Z, 0.0, 0, 0, -1);
+	InitVehiclePlate(vehicleid);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 3;
+	gVehicleAlarmLevel[vehicleid] = 2;
+	gVehicleMarketPrice[vehicleid] = 120000;
+	gVehicleManufacturer[vehicleid] = 2;
+
+	vehicleid = CreateVehicle(560, PREVIEW_X + 8.0, PREVIEW_Y - 3.0, PREVIEW_Z, 180.0, 0, 0, -1);
+	InitVehiclePlate(vehicleid);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 2;
+	gVehicleAlarmLevel[vehicleid] = 1;
+	gVehicleMarketPrice[vehicleid] = 60000;
+	gVehicleManufacturer[vehicleid] = 1;
+
+	vehicleid = CreateVehicle(489, PREVIEW_X + 12.0, PREVIEW_Y + 6.0, PREVIEW_Z, 90.0, 0, 0, -1);
+	InitVehiclePlate(vehicleid);
+	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
+	gVehicleLockLevel[vehicleid] = 4;
+	gVehicleAlarmLevel[vehicleid] = 3;
+	gVehicleMarketPrice[vehicleid] = 90000;
+	gVehicleManufacturer[vehicleid] = 3;
+
 	new MySQLOpt:options = mysql_init_options();
 	mysql_set_option(options, SERVER_PORT, MYSQL_PORT);
 	g_SQL = mysql_connect(MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, options);
-	if (g_SQL == MYSQL_INVALID_HANDLE || mysql_errno(g_SQL) != 0)
+	if (g_SQL == MYSQL_INVALID_HANDLE)
 	{
-		print("[MySQL] Connection failed.");
+		print("[MySQL] Connection failed (invalid handle).");
+		gDatabaseReady = false;
+	}
+	else if (mysql_errno(g_SQL) != 0)
+	{
+		new errMsg[128];
+		mysql_error(errMsg, sizeof(errMsg), g_SQL);
+		printf("[MySQL] Connection failed (errno=%d msg=%s).", mysql_errno(g_SQL), errMsg);
+		gDatabaseReady = false;
 	}
 	else
 	{
 		print("[MySQL] Connection successful.");
-		mysql_tquery(g_SQL,
-			"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
-		);
+		gDatabaseReady = EnsureDatabaseSchema();
+		if (gDatabaseReady)
+		{
+			LoadStolenPlates();
+		}
+		else
+		{
+			print("[MySQL] Schema initialization failed.");
+		}
 	}
 
 	InitCinemaObjects();
@@ -848,9 +2686,25 @@ public OnGameModeInit()
 
 public OnGameModeExit()
 {
+	DestroyPropertyTeleports();
 	if (g_SQL != MYSQL_INVALID_HANDLE)
 	{
 		mysql_close(g_SQL);
+	}
+	if (WarehousePickup)
+	{
+		DestroyPickup(WarehousePickup);
+	}
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		if (BusinessPickups[i])
+		{
+			DestroyPickup(BusinessPickups[i]);
+		}
+		if (BusinessLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(BusinessLabels[i]);
+		}
 	}
 	CleanupCinemaInterior();
 	return 1;
@@ -860,49 +2714,121 @@ public OnPlayerConnect(playerid)
 {
 	ResetPlayerData(playerid);
 	TogglePlayerSpectating(playerid, true);
+	LogAuthEvent(playerid, "connect");
 
-	if (g_SQL == MYSQL_INVALID_HANDLE || mysql_errno(g_SQL) != 0)
+	if (!gDatabaseReady || g_SQL == MYSQL_INVALID_HANDLE || mysql_errno(g_SQL) != 0)
 	{
+		new detail[64];
+		format(detail, sizeof(detail), "db_offline errno=%d", mysql_errno(g_SQL));
+		LogAuthEvent(playerid, "connect_fail", detail);
 		SendClientMessage(playerid, -1, "Database offline. Try again later.");
 		Kick(playerid);
 		return 1;
 	}
-
-	new name[MAX_PLAYER_NAME];
-	GetPlayerName(playerid, name, sizeof(name));
-
-	new query[256];
-	mysql_format(g_SQL, query, sizeof(query),
-		"SELECT `password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world` FROM `accounts` WHERE `name`='%e' LIMIT 1",
-		name
-	);
-	mysql_tquery(g_SQL, query, "OnAccountCheck", "i", playerid);
+	PlayerData[playerid][pAuthRetries] = 0;
+	StartAccountCheck(playerid);
+	SetTimerEx("AuthTimeoutCheck", 5000, false, "i", playerid);
 	return 1;
 }
 
 public OnPlayerDisconnect(playerid, reason)
 {
+	new detail[64];
+	format(detail, sizeof(detail), "reason=%d logged=%d", reason, PlayerData[playerid][pLogged]);
+	LogAuthEvent(playerid, "disconnect", detail);
+	CancelMiniGame(playerid);
+	DestroyPet(playerid);
+	StopStationForPlayer(playerid);
+	gCinemaWatching[playerid] = false;
+	if (gTaxiRequesting[playerid])
+	{
+		TaxiResetRequestForCustomer(playerid);
+	}
+	if (TaxiCustomerForDriver[playerid] != INVALID_PLAYER_ID)
+	{
+		TaxiResetRequestForDriver(playerid);
+	}
+	if (TaxiRentalVehicle[playerid] != INVALID_VEHICLE_ID)
+	{
+		DestroyVehicle(TaxiRentalVehicle[playerid]);
+		TaxiRentalVehicle[playerid] = INVALID_VEHICLE_ID;
+	}
+	ReleasePlayerBusinesses(playerid);
+	ClearDeliveryCheckpoint(playerid);
 	if (PlayerData[playerid][pLogged])
 	{
-		SavePlayerPosition(playerid);
+		SavePlayerState(playerid);
 	}
-	gCinemaWatching[playerid] = false;
+	if (PlayerData[playerid][pNextBilling] != 0)
+	{
+		KillTimer(PlayerData[playerid][pNextBilling]);
+		PlayerData[playerid][pNextBilling] = 0;
+	}
 	ResetPlayerData(playerid);
 	return 1;
 }
 
 public OnPlayerSpawn(playerid)
 {
-	AddPlayerItem(playerid, 0, 2);
-	AddPlayerItem(playerid, 1, 1);
-	AddPlayerItem(playerid, 4, 1);
-	SendClientMessage(playerid, -1, "Use /inv (or /inventory) to view items. Press Y to pick up drops.");
+	if (PlayerData[playerid][pLogged] && !PlayerData[playerid][pTutorialDone])
+	{
+		GiveStarterKit(playerid);
+		ShowTutorialDialog(playerid);
+		SendClientMessage(playerid, -1, "Use /inv (or /inventory) to view items. Press Y to pick up drops.");
+		SendClientMessage(playerid, -1, "Use /help or /todo if you're unsure what to do next.");
+	}
+	if (PlayerData[playerid][pAddiction] >= 50)
+	{
+		SetPlayerHealth(playerid, 50.0);
+	}
+	if (PlayerData[playerid][pLogged])
+	{
+		if (PlayerData[playerid][pNextBilling] != 0)
+		{
+			KillTimer(PlayerData[playerid][pNextBilling]);
+		}
+		PlayerData[playerid][pNextBilling] = SetTimerEx("OnDmvBilling", DMV_BILLING_INTERVAL, false, "i", playerid);
+	}
 	return 1;
 }
 
 public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 {
-	if (newkeys & KEY_YES)
+	if (PlayerData[playerid][pMiniGame] != MINIGAME_NONE)
+	{
+		if ((newkeys & KEY_ACTION) && !(oldkeys & KEY_ACTION))
+		{
+			ShowMiniGameHelp(playerid);
+			return 1;
+		}
+
+		for (new i = 0; i < sizeof(gMiniKeys); i++)
+		{
+			if ((newkeys & gMiniKeys[i]) && !(oldkeys & gMiniKeys[i]))
+			{
+				new expectedIndex = PlayerData[playerid][pMiniKeySequence][PlayerData[playerid][pMiniStep]];
+				if (i == expectedIndex)
+				{
+					PlayerData[playerid][pMiniStep]++;
+					if (PlayerData[playerid][pMiniStep] >= MINIGAME_KEYS)
+					{
+						CompleteMiniGame(playerid);
+						return 1;
+					}
+
+					ShowMiniGamePrompt(playerid);
+				}
+				else
+				{
+					FailMiniGame(playerid, "Wrong key pressed. The attempt failed.");
+				}
+				return 1;
+			}
+		}
+		return 1;
+	}
+
+	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
 	{
 		new dropid = GetNearestActiveDrop(playerid);
 		if (dropid != -1)
@@ -914,103 +2840,49 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 			format(message, sizeof(message), "You picked up %s x%d.", itemName, Drops[dropid][dropAmount]);
 			SendClientMessage(playerid, -1, message);
 			ClearDrop(dropid);
+			return 1;
+		}
+
+		if (PlayerData[playerid][pLogged])
+		{
+			new businessId = GetNearestBusiness(playerid);
+			if (businessId != -1)
+			{
+				if (BusinessData[businessId][bOwner] == playerid)
+				{
+					ShowBusinessStatus(playerid, businessId);
+					SendClientMessage(playerid, -1, "Use /setcomponentprice [amount] or /sellbiz to manage this business.");
+				}
+				else if (BusinessData[businessId][bOwner] == INVALID_PLAYER_ID)
+				{
+					new message[96];
+					format(message, sizeof(message), "This business is for sale: $%d. Use /buybiz to purchase it.", BusinessData[businessId][bPrice]);
+					SendClientMessage(playerid, -1, message);
+				}
+				else
+				{
+					ShowBusinessStatus(playerid, businessId);
+				}
+				return 1;
+			}
+		}
+
+		if (IsPlayerAtCinema(playerid))
+		{
+			if (!gCinemaActive)
+			{
+				SendClientMessage(playerid, -1, "The cinema is not playing anything right now.");
+				return 1;
+			}
+
+			gCinemaWatching[playerid] = true;
+			ShowCinemaStatus(playerid);
+			return 1;
 		}
 	}
 	return 1;
 }
 
-public OnPlayerStateChange(playerid, newstate, oldstate)
-{
-	if (oldstate == PLAYER_STATE_DRIVER && newstate != PLAYER_STATE_DRIVER && gAlprEnabled[playerid])
-	{
-		StopAlpr(playerid);
-	}
-	return 1;
-}
-
-public AlprScan(playerid)
-{
-	if (!IsPlayerConnected(playerid) || !gAlprEnabled[playerid])
-	{
-		return 0;
-	}
-
-	if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
-	{
-		StopAlpr(playerid);
-		return 0;
-	}
-
-	new playerVehicle = GetPlayerVehicleID(playerid);
-	if (!IsPoliceVehicle(playerVehicle))
-	{
-		StopAlpr(playerid);
-		SendClientMessage(playerid, -1, "ALPR disabled. You are no longer in a police vehicle.");
-		return 0;
-	}
-
-	new Float:px, Float:py, Float:pz;
-	GetVehiclePos(playerVehicle, px, py, pz);
-
-	new nearestVehicle = INVALID_VEHICLE_ID;
-	new Float:nearestDist = ALPR_RANGE + 1.0;
-
-	for (new vid = 1; vid <= MAX_VEHICLES; vid++)
-	{
-		if (vid == playerVehicle)
-		{
-			continue;
-		}
-		if (!IsVehicleStreamedIn(vid, playerid))
-		{
-			continue;
-		}
-		new Float:vx, Float:vy, Float:vz;
-		GetVehiclePos(vid, vx, vy, vz);
-		new Float:dist = floatsqroot((vx - px) * (vx - px) + (vy - py) * (vy - py) + (vz - pz) * (vz - pz));
-		if (dist <= ALPR_RANGE && dist < nearestDist)
-		{
-			nearestDist = dist;
-			nearestVehicle = vid;
-		}
-	}
-
-	if (nearestVehicle == INVALID_VEHICLE_ID)
-	{
-		return 1;
-	}
-
-	new plate[MAX_PLATE_LEN];
-	GetVehicleNumberPlate(nearestVehicle, plate, sizeof(plate));
-	ToUpperStr(plate);
-
-	new driverid = GetVehicleOccupant(nearestVehicle, 0);
-	new ownerName[MAX_PLAYER_NAME] = "Unknown";
-	new bool:licenseOk = false;
-	new bool:taxDue = false;
-
-	if (driverid != INVALID_PLAYER_ID)
-	{
-		GetPlayerName(driverid, ownerName, sizeof(ownerName));
-		licenseOk = gHasLicense[driverid];
-		taxDue = gTaxDue[driverid];
-	}
-
-	new bool:stolen = IsPlateStolen(plate);
-	PlayerPlaySound(playerid, 1052, 0.0, 0.0, 0.0);
-
-	new message[144];
-	format(message, sizeof(message),
-		"ALPR: Plate %s | Owner: %s | License: %s | Stolen: %s | Taxes: %s",
-		plate,
-		ownerName,
-		licenseOk ? "OK" : "NO",
-		stolen ? "YES" : "NO",
-		taxDue ? "DUE" : "OK"
-	);
-	SendClientMessage(playerid, -1, message);
-	return 1;
-}
 public OnPlayerRequestClass(playerid, classid)
 {
 	if (!PlayerData[playerid][pRegistering])
@@ -1033,6 +2905,7 @@ public OnPlayerRequestSpawn(playerid)
 	{
 		PlayerData[playerid][pRegistering] = false;
 		PlayerData[playerid][pLogged] = true;
+		LogAuthEvent(playerid, "register_spawn");
 		RegisterPlayer(playerid);
 	}
 	return 1;
@@ -1040,11 +2913,24 @@ public OnPlayerRequestSpawn(playerid)
 
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
+	if (dialogid == DIALOG_GARAGE_HELP)
+	{
+		return 1;
+	}
+
 	if (dialogid == DIALOG_LOGIN)
 	{
 		if (!response)
 		{
-			Kick(playerid);
+			ShowPlayerDialog(
+				playerid,
+				DIALOG_LOGIN_CANCEL,
+				DIALOG_STYLE_MSGBOX,
+				"Quit Login?",
+				"Do you want to quit?\n\nUse /login to reopen the login screen.",
+				"Quit",
+				"Back"
+			);
 			return 1;
 		}
 
@@ -1062,8 +2948,17 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 
 		if (!strcmp(hash, PlayerData[playerid][pPassHash], false))
 		{
+			PlayerData[playerid][pLoginAttempts] = 0;
 			PlayerData[playerid][pLogged] = true;
+			LogAuthEvent(playerid, "login_success");
 			TogglePlayerSpectating(playerid, false);
+
+			ResetPlayerMoney(playerid);
+			if (PlayerData[playerid][pMoney] > 0)
+			{
+				GivePlayerMoney(playerid, PlayerData[playerid][pMoney]);
+			}
+			UpdateLastLogin(playerid);
 
 			SetPlayerInterior(playerid, PlayerData[playerid][pInterior]);
 			SetPlayerVirtualWorld(playerid, PlayerData[playerid][pWorld]);
@@ -1074,8 +2969,51 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		}
 		else
 		{
+			PlayerData[playerid][pLoginAttempts]++;
+			new detail[48];
+			format(detail, sizeof(detail), "attempt=%d", PlayerData[playerid][pLoginAttempts]);
+			LogAuthEvent(playerid, "login_fail", detail);
+			if (PlayerData[playerid][pLoginAttempts] >= MAX_LOGIN_ATTEMPTS)
+			{
+				SendClientMessage(playerid, -1, "Too many failed login attempts.");
+				Kick(playerid);
+				return 1;
+			}
 			ShowLoginDialog(playerid, "Wrong password.\n\nEnter your password:");
 		}
+		return 1;
+	}
+
+	if (dialogid == DIALOG_LOGIN_CANCEL)
+	{
+		if (response)
+		{
+			LogAuthEvent(playerid, "login_cancel_quit");
+			Kick(playerid);
+			return 1;
+		}
+		LogAuthEvent(playerid, "login_cancel_back");
+		ShowLoginDialog(playerid);
+		return 1;
+	}
+
+	if (dialogid == DIALOG_SETSTATION)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+
+		new station = strval(inputtext);
+		if (station < 1 || station > MAX_STATIONS)
+		{
+			new prompt[64];
+			format(prompt, sizeof(prompt), "Enter station number (1-%d):", MAX_STATIONS);
+			ShowPlayerDialog(playerid, DIALOG_SETSTATION, DIALOG_STYLE_INPUT, "Set Station", prompt, "Set", "Cancel");
+			return 1;
+		}
+
+		PlayStationForPlayer(playerid, station);
 		return 1;
 	}
 
@@ -1083,13 +3021,23 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	{
 		if (!response)
 		{
-			Kick(playerid);
+			ShowPlayerDialog(
+				playerid,
+				DIALOG_REGISTER_CANCEL,
+				DIALOG_STYLE_MSGBOX,
+				"Quit Registration?",
+				"Do you want to quit?\n\nUse /register to reopen registration.",
+				"Quit",
+				"Back"
+			);
 			return 1;
 		}
 
-		if (strlen(inputtext) < 4)
+		if (strlen(inputtext) < MIN_PASSWORD_LEN)
 		{
-			ShowRegisterDialog(playerid, "Password must be at least 4 characters.\n\nCreate a password:");
+			new message[96];
+			format(message, sizeof(message), "Password must be at least %d characters.\n\nCreate a password:", MIN_PASSWORD_LEN);
+			ShowRegisterDialog(playerid, message);
 			return 1;
 		}
 
@@ -1098,11 +3046,128 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 
 		SHA256_PassHash(inputtext, name, PlayerData[playerid][pPassHash], PASSWORD_LEN + 1);
 		PlayerData[playerid][pRegistering] = true;
+		LogAuthEvent(playerid, "register_begin");
 
 		TogglePlayerSpectating(playerid, false);
 		ForceClassSelection(playerid);
 		SetupPreviewCamera(playerid);
 		SendClientMessage(playerid, -1, "Choose a skin and press Spawn to finish registration.");
+		return 1;
+	}
+
+	if (dialogid == DIALOG_REGISTER_CANCEL)
+	{
+		if (response)
+		{
+			LogAuthEvent(playerid, "register_cancel_quit");
+			Kick(playerid);
+			return 1;
+		}
+		LogAuthEvent(playerid, "register_cancel_back");
+		ShowRegisterDialog(playerid);
+		return 1;
+	}
+
+	if (dialogid == DIALOG_DMV)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+
+		switch (listitem)
+		{
+			case 0:
+			{
+				if (PlayerData[playerid][pVehicleRegistered])
+				{
+					SendClientMessage(playerid, -1, "Your vehicle is already registered.");
+				}
+				else
+				{
+					ShowDmvPaymentDialog(playerid, "Register vehicle and issue plates", GetRegistrationCost());
+				}
+			}
+			case 1:
+			{
+				if (!PlayerData[playerid][pVehicleRegistered])
+				{
+					SendClientMessage(playerid, -1, "Register your vehicle before paying road taxes.");
+				}
+				else if (PlayerData[playerid][pTaxesPaid])
+				{
+					SendClientMessage(playerid, -1, "Your road taxes are already paid.");
+				}
+				else
+				{
+					ShowDmvPaymentDialog(playerid, "Pay road taxes", GetTaxCost());
+				}
+			}
+			case 2:
+			{
+				if (!PlayerData[playerid][pVehicleRegistered])
+				{
+					SendClientMessage(playerid, -1, "Register your vehicle before insuring it.");
+				}
+				else if (PlayerData[playerid][pInsured])
+				{
+					SendClientMessage(playerid, -1, "Your vehicle is already insured.");
+				}
+				else
+				{
+					ShowDmvPaymentDialog(playerid, "Purchase vehicle insurance", GetInsuranceCost());
+				}
+			}
+		}
+		return 1;
+	}
+
+	if (dialogid == DIALOG_DMV_PAY)
+	{
+		if (!response)
+		{
+			ShowDmvDialog(playerid);
+			return 1;
+		}
+
+		new cost;
+		if (!PlayerData[playerid][pVehicleRegistered])
+		{
+			cost = GetRegistrationCost();
+			if (ChargePlayer(playerid, cost))
+			{
+				PlayerData[playerid][pVehicleRegistered] = true;
+				new vehicleid = GetPlayerVehicleID(playerid);
+				if (vehicleid != 0)
+				{
+					new plate[MAX_PLATE_LEN];
+					GenerateVehiclePlate(vehicleid, plate, sizeof(plate));
+					SetVehiclePlate(vehicleid, plate);
+				}
+				SendClientMessage(playerid, -1, "Vehicle registered and plates issued.");
+			}
+		}
+		else if (!PlayerData[playerid][pTaxesPaid])
+		{
+			cost = GetTaxCost();
+			if (ChargePlayer(playerid, cost))
+			{
+				PlayerData[playerid][pTaxesPaid] = true;
+				SendClientMessage(playerid, -1, "Road taxes paid.");
+			}
+		}
+		else if (!PlayerData[playerid][pInsured])
+		{
+			cost = GetInsuranceCost();
+			if (ChargePlayer(playerid, cost))
+			{
+				PlayerData[playerid][pInsured] = true;
+				SendClientMessage(playerid, -1, "Insurance activated.");
+			}
+		}
+
+		SavePlayerDmvStatus(playerid);
+		ShowDmvDialog(playerid);
 		return 1;
 	}
 
@@ -1146,7 +3211,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			return 1;
 		}
 
-		new action = ACTION_NONE;
+		new invAction:action = ACTION_NONE;
 		if (gItems[itemid][itemConsumable])
 		{
 			if (listitem == 0) action = ACTION_USE;
@@ -1198,7 +3263,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		}
 		new amount = strval(inputtext);
 		new itemid = PlayerData[playerid][pSelectedItem];
-		new action = PlayerData[playerid][pSelectedAction];
+		new invAction:action = PlayerData[playerid][pSelectedAction];
 		if (!IsValidItem(itemid) || amount < 1)
 		{
 			SendClientMessage(playerid, -1, "Invalid amount.");
@@ -1343,82 +3408,470 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 	return 0;
 }
 
-public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
+public OnPlayerPickUpPickup(playerid, pickupid)
 {
-	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
+	if (pickupid == WarehousePickup)
 	{
-		if (!IsPlayerAtCinema(playerid))
-		{
-			return 1;
-		}
-
-		if (!gCinemaActive)
-		{
-			SendClientMessage(playerid, -1, "The cinema is not playing anything right now.");
-			return 1;
-		}
-
-		gCinemaWatching[playerid] = true;
-		ShowCinemaStatus(playerid);
+		SendClientMessage(playerid, -1, "Component warehouse: use /buycrates [count] to buy crates.");
 		return 1;
+	}
+
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		if (pickupid == BusinessPickups[i])
+		{
+			ShowBusinessStatus(playerid, i);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+public OnPlayerEnterCheckpoint(playerid)
+{
+	if (!PlayerData[playerid][pHasDelivery])
+	{
+		return 0;
+	}
+
+	new businessId = PlayerData[playerid][pDeliveryBiz];
+	if (businessId < 0 || businessId >= MAX_BUSINESSES)
+	{
+		ClearDeliveryCheckpoint(playerid);
+		return 0;
+	}
+
+	if (GetPlayerDistanceFromPoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ]) <= BUSINESS_BUY_RADIUS)
+	{
+		DeliverComponents(playerid, businessId);
+		ClearDeliveryCheckpoint(playerid);
 	}
 	return 1;
 }
 
-public OnPlayerCommandText(playerid, cmdtext[])
+public OnPlayerClickMap(playerid, Float:fX, Float:fY, Float:fZ)
 {
-	if (!strcmp(cmdtext, "/reloadcinema", true))
+	new driverid = TaxiDriverForCustomer[playerid];
+	if (driverid != INVALID_PLAYER_ID)
 	{
-		SetupCinemaInterior();
-		SendClientMessage(playerid, -1, "Cinema interior reloaded.");
+		SetPlayerCheckpoint(driverid, fX, fY, fZ, 4.0);
+		SendClientMessage(driverid, -1, "Customer updated their waypoint.");
+	}
+	return 1;
+}
+
+public OnPlayerStateChange(playerid, newstate, oldstate)
+{
+	if (oldstate == PLAYER_STATE_DRIVER && newstate != PLAYER_STATE_DRIVER && gAlprEnabled[playerid])
+	{
+		StopAlpr(playerid);
+	}
+	return 1;
+}
+
+public OnPlayerExitVehicle(playerid, vehicleid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_HOTWIRE)
+	{
+		FailMiniGame(playerid, "You left the vehicle and failed to hotwire it.");
+	}
+	return 1;
+}
+
+public OnMiniGameTimeout(playerid)
+{
+	if (PlayerData[playerid][pMiniGame] == MINIGAME_NONE)
+	{
+		return 0;
+	}
+
+	FailMiniGame(playerid, "You ran out of time and failed the attempt.");
+	return 1;
+}
+
+public PetUpdate(playerid)
+{
+	if (!IsPlayerConnected(playerid))
+	{
+		return 0;
+	}
+
+	if (PlayerData[playerid][pPetActor] == INVALID_ACTOR_ID)
+	{
+		return 0;
+	}
+
+	new Float:x, Float:y, Float:z, Float:a;
+	GetPlayerPos(playerid, x, y, z);
+	GetPlayerFacingAngle(playerid, a);
+
+	SetActorVirtualWorld(PlayerData[playerid][pPetActor], GetPlayerVirtualWorld(playerid));
+
+	switch (PlayerData[playerid][pPetTask])
+	{
+		case PET_TASK_FOLLOW:
+		{
+			new Float:angle = a + 180.0;
+			new Float:px = x + floatsin(angle, degrees) * PET_FOLLOW_DISTANCE;
+			new Float:py = y + floatcos(angle, degrees) * PET_FOLLOW_DISTANCE;
+			SetActorPos(PlayerData[playerid][pPetActor], px, py, z);
+		}
+		case PET_TASK_WANDER:
+		{
+			new Float:angle = float(random(360));
+			new Float:distance = float(random(5000)) / 100.0;
+			if (distance > PET_WANDER_RADIUS)
+			{
+				distance = PET_WANDER_RADIUS;
+			}
+			new Float:px = x + floatsin(angle, degrees) * distance;
+			new Float:py = y + floatcos(angle, degrees) * distance;
+			SetActorPos(PlayerData[playerid][pPetActor], px, py, z);
+		}
+	}
+	return 1;
+}
+
+public TaxiRentalTick()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i) || TaxiRentalEndTick[i] == 0)
+		{
+			continue;
+		}
+
+		new minutes_left = TaxiMinutesRemaining(i);
+		if (minutes_left == 0)
+		{
+			TaxiRentalEndTick[i] = 0;
+			TaxiRentalNotifiedFive[i] = false;
+			TaxiRentalNotifiedOne[i] = false;
+			SendClientMessage(i, -1, "Taxi rental has ended. Return the taxi to avoid towing fees.");
+			if (TaxiRentalVehicle[i] != INVALID_VEHICLE_ID)
+			{
+				DestroyVehicle(TaxiRentalVehicle[i]);
+				TaxiRentalVehicle[i] = INVALID_VEHICLE_ID;
+			}
+			continue;
+		}
+
+		if (minutes_left <= TAXI_RENTAL_REMINDER_FIVE && !TaxiRentalNotifiedFive[i])
+		{
+			TaxiRentalNotifiedFive[i] = true;
+			SendClientMessage(i, -1, "Taxi rental reminder: 5 minutes remaining.");
+		}
+
+		if (minutes_left <= TAXI_RENTAL_REMINDER_ONE && !TaxiRentalNotifiedOne[i])
+		{
+			TaxiRentalNotifiedOne[i] = true;
+			SendClientMessage(i, -1, "Taxi rental reminder: 1 minute remaining.");
+		}
+	}
+	return 1;
+}
+
+public TaxiMeterTick()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i) || !TaxiMeterActive[i])
+		{
+			continue;
+		}
+
+		if (GetPlayerState(i) != PLAYER_STATE_DRIVER)
+		{
+			TaxiStopMeter(i);
+			continue;
+		}
+
+		new vehicleid = GetPlayerVehicleID(i);
+		if (!TaxiIsVehicleTaxi(vehicleid))
+		{
+			TaxiStopMeter(i);
+			continue;
+		}
+
+		new Float:vel_x, Float:vel_y, Float:vel_z;
+		GetVehicleVelocity(vehicleid, vel_x, vel_y, vel_z);
+		if (floatsqroot((vel_x * vel_x) + (vel_y * vel_y) + (vel_z * vel_z)) < 0.01)
+		{
+			continue;
+		}
+
+		TaxiMeterElapsed[i] += 1000;
+		if (TaxiMeterElapsed[i] >= TAXI_METER_RATE_MS)
+		{
+			TaxiMeterElapsed[i] = 0;
+			TaxiMeterFareTotal[i] += TaxiFare[i];
+			new message[64];
+			format(message, sizeof(message), "Taxi fare increased to $%d.", TaxiMeterFareTotal[i]);
+			SendClientMessage(i, -1, message);
+		}
+	}
+	return 1;
+}
+
+public AutoSaveTick()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i) || !PlayerData[i][pLogged])
+		{
+			continue;
+		}
+		SavePlayerState(i);
+	}
+	return 1;
+}
+
+public AuthTimeoutCheck(playerid)
+{
+	if (!IsPlayerConnected(playerid))
+	{
+		return 0;
+	}
+	if (PlayerData[playerid][pAuthChecked])
+	{
+		return 1;
+	}
+	PlayerData[playerid][pAuthRetries]++;
+	new detail[32];
+	format(detail, sizeof(detail), "retry=%d", PlayerData[playerid][pAuthRetries]);
+	LogAuthEvent(playerid, "account_check_timeout", detail);
+
+	if (!gDatabaseReady || mysql_errno(g_SQL) != 0 || PlayerData[playerid][pAuthRetries] > 1)
+	{
+		SendClientMessage(playerid, -1, "Database is busy or offline. Please reconnect.");
+		Kick(playerid);
 		return 1;
 	}
 
-	if (!strcmp(cmdtext, "/cinemaoff", true))
-	{
-		if (!IsPlayerAdmin(playerid))
-		{
-			SendClientMessage(playerid, -1, "You must be an RCON admin to stop broadcasts.");
-			return 1;
-		}
+	StartAccountCheck(playerid);
+	SetTimerEx("AuthTimeoutCheck", 5000, false, "i", playerid);
+	return 1;
+}
 
-		StopCinemaBroadcast();
+public AlprScan(playerid)
+{
+	if (!IsPlayerConnected(playerid) || !gAlprEnabled[playerid])
+	{
+		return 0;
+	}
+
+	if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+	{
+		StopAlpr(playerid);
+		return 0;
+	}
+
+	new playerVehicle = GetPlayerVehicleID(playerid);
+	if (!IsPoliceVehicle(playerVehicle))
+	{
+		StopAlpr(playerid);
+		SendClientMessage(playerid, -1, "ALPR disabled. You are no longer in a police vehicle.");
+		return 0;
+	}
+
+	new Float:px, Float:py, Float:pz;
+	GetVehiclePos(playerVehicle, px, py, pz);
+
+	new nearestVehicle = INVALID_VEHICLE_ID;
+	new Float:nearestDist = ALPR_RANGE + 1.0;
+
+	for (new vid = 1; vid <= MAX_VEHICLES; vid++)
+	{
+		if (vid == playerVehicle)
+		{
+			continue;
+		}
+		if (!IsVehicleStreamedIn(vid, playerid))
+		{
+			continue;
+		}
+		new Float:vx, Float:vy, Float:vz;
+		GetVehiclePos(vid, vx, vy, vz);
+		new Float:dist = floatsqroot((vx - px) * (vx - px) + (vy - py) * (vy - py) + (vz - pz) * (vz - pz));
+		if (dist <= ALPR_RANGE && dist < nearestDist)
+		{
+			nearestDist = dist;
+			nearestVehicle = vid;
+		}
+	}
+
+	if (nearestVehicle == INVALID_VEHICLE_ID)
+	{
 		return 1;
 	}
 
-	if (!strcmp(cmdtext, "/leavecinema", true))
-	{
-		if (!gCinemaWatching[playerid])
-		{
-			SendClientMessage(playerid, -1, "You are not watching the cinema.");
-			return 1;
-		}
+	new plate[MAX_PLATE_LEN];
+	GetVehicleNumberPlate(nearestVehicle, plate, sizeof(plate));
+	ToUpperStr(plate);
 
-		gCinemaWatching[playerid] = false;
-		SendClientMessage(playerid, -1, "You stopped watching the cinema.");
-		return 1;
+	new driverid = GetVehicleOccupant(nearestVehicle, 0);
+	new ownerName[MAX_PLAYER_NAME] = "Unknown";
+	new bool:licenseOk = false;
+	new bool:taxDue = false;
+
+	if (driverid != INVALID_PLAYER_ID)
+	{
+		GetPlayerName(driverid, ownerName, sizeof(ownerName));
+		licenseOk = gHasLicense[driverid];
+		taxDue = gTaxDue[driverid];
 	}
 
-	if (!strncmp(cmdtext, "/cinema ", 8, true))
+	new bool:stolen = IsPlateStolen(plate);
+	PlayerPlaySound(playerid, 1052, 0.0, 0.0, 0.0);
+
+	new message[144];
+	format(message, sizeof(message),
+		"ALPR: Plate %s | Owner: %s | License: %s | Stolen: %s | Taxes: %s",
+		plate,
+		ownerName,
+		licenseOk ? "OK" : "NO",
+		stolen ? "YES" : "NO",
+		taxDue ? "DUE" : "OK"
+	);
+	SendClientMessage(playerid, -1, message);
+	return 1;
+}
+
+public OnAddictionTick()
+{
+	new currentTick = GetTickCount();
+	for (new playerid = 0; playerid < MAX_PLAYERS; playerid++)
 	{
-		if (!IsPlayerAdmin(playerid))
+		if (!IsPlayerConnected(playerid) || !PlayerData[playerid][pLogged])
 		{
-			SendClientMessage(playerid, -1, "You must be an RCON admin to start broadcasts.");
-			return 1;
+			continue;
 		}
 
-		new video[96];
-		strmid(video, cmdtext, 8, strlen(cmdtext), sizeof(video));
-		if (strlen(video) < 3)
+		if (PlayerData[playerid][pDrugEffectEndTick] > 0 && currentTick >= PlayerData[playerid][pDrugEffectEndTick])
 		{
-			SendClientMessage(playerid, -1, "Usage: /cinema <youtube_id_or_url>");
-			return 1;
+			SetPlayerDrunkLevel(playerid, 0);
+			PlayerData[playerid][pDrugEffectEndTick] = 0;
 		}
 
-		StartCinemaBroadcast(video);
+		if (currentTick - PlayerData[playerid][pLastAddictionTick] >= ADDICTION_DECAY_INTERVAL)
+		{
+			if (PlayerData[playerid][pAddiction] > 0)
+			{
+				PlayerData[playerid][pAddiction] -= 1;
+			}
+			PlayerData[playerid][pLastAddictionTick] = currentTick;
+		}
+
+		if (PlayerData[playerid][pAddiction] >= 50)
+		{
+			new Float:health;
+			GetPlayerHealth(playerid, health);
+			if (health > 1.0)
+			{
+				SetPlayerHealth(playerid, health - 1.0);
+			}
+		}
+	}
+	return 1;
+}
+
+stock HandleGarageCommand(playerid, const command[])
+{
+	if (!strcmp(command, "/garagehelp", true))
+	{
+		return ShowGarageHelp(playerid);
+	}
+	if (!strcmp(command, "/plock", true))
+	{
+		PlayerData[playerid][pGarageLocked] = !PlayerData[playerid][pGarageLocked];
+		SendClientMessage(playerid, -1, PlayerData[playerid][pGarageLocked] ? "Garage locked." : "Garage unlocked.");
 		return 1;
 	}
-
+	if (!strcmp(command, "/pentrance", true))
+	{
+		SendClientMessage(playerid, -1, "Garage entrance updated (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pinv", true))
+	{
+		SendClientMessage(playerid, -1, "Garage inventory opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/ptitem", true) || !strcmp(command, "/ptitems", true))
+	{
+		SendClientMessage(playerid, -1, "Removed item(s) from the garage (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/ppitem", true) || !strcmp(command, "/ppitems", true))
+	{
+		SendClientMessage(playerid, -1, "Placed item(s) in the garage (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/outfit", true))
+	{
+		SendClientMessage(playerid, -1, "Outfit menu opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pmenu", true))
+	{
+		SendClientMessage(playerid, -1, "Garage info menu opened (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pinfo", true))
+	{
+		SendClientMessage(playerid, -1, "Garage info displayed (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/setrentable", true))
+	{
+		SendClientMessage(playerid, -1, "Garage rentable state updated (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/rent", true))
+	{
+		SendClientMessage(playerid, -1, "Garage rented (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/stoprent", true))
+	{
+		SendClientMessage(playerid, -1, "Stopped renting (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/tenants", true))
+	{
+		SendClientMessage(playerid, -1, "Tenant list shown (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/kicktenant", true))
+	{
+		SendClientMessage(playerid, -1, "Tenant removed (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/evictall", true))
+	{
+		SendClientMessage(playerid, -1, "All tenants evicted (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pdeposit", true))
+	{
+		SendClientMessage(playerid, -1, "Deposited money (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/pwithdrawl", true))
+	{
+		SendClientMessage(playerid, -1, "Withdrew money (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/sellproperty", true))
+	{
+		SendClientMessage(playerid, -1, "Garage sold back to market (placeholder).");
+		return 1;
+	}
+	if (!strcmp(command, "/playersellproperty", true))
+	{
+		SendClientMessage(playerid, -1, "Garage sold to player (placeholder).");
+		return 1;
+	}
 	return 0;
 }
 
@@ -1429,10 +3882,36 @@ public OnAccountCheck(playerid)
 		return 0;
 	}
 
+	new err = mysql_errno(g_SQL);
+	if (err != 0)
+	{
+		new detail[64];
+		format(detail, sizeof(detail), "query_errno=%d", err);
+		LogAuthEvent(playerid, "account_check_error", detail);
+		if (err == 1054 || err == 1146)
+		{
+			if (EnsureDatabaseSchema())
+			{
+				StartAccountCheck(playerid);
+				return 1;
+			}
+		}
+		SendClientMessage(playerid, -1, "Account lookup failed. Please reconnect.");
+		Kick(playerid);
+		return 1;
+	}
+
+	LogAuthEvent(playerid, "account_check_cb");
+	PlayerData[playerid][pAuthChecked] = true;
+	PlayerData[playerid][pLoginAttempts] = 0;
 	new rows;
 	cache_get_row_count(rows);
+	new rowsDetail[32];
+	format(rowsDetail, sizeof(rowsDetail), "rows=%d", rows);
+	LogAuthEvent(playerid, "account_check_rows", rowsDetail);
 	if (rows > 0)
 	{
+		cache_get_value_name_int(0, "id", PlayerData[playerid][pAccountId]);
 		cache_get_value_name(0, "password", PlayerData[playerid][pPassHash], PASSWORD_LEN + 1);
 		cache_get_value_name_int(0, "skin", PlayerData[playerid][pSkin]);
 		cache_get_value_name_float(0, "x", PlayerData[playerid][pX]);
@@ -1441,21 +3920,121 @@ public OnAccountCheck(playerid)
 		cache_get_value_name_float(0, "a", PlayerData[playerid][pA]);
 		cache_get_value_name_int(0, "interior", PlayerData[playerid][pInterior]);
 		cache_get_value_name_int(0, "world", PlayerData[playerid][pWorld]);
+		cache_get_value_name_int(0, "vehicle_registered", PlayerData[playerid][pVehicleRegistered]);
+		cache_get_value_name_int(0, "taxes_paid", PlayerData[playerid][pTaxesPaid]);
+		cache_get_value_name_int(0, "insured", PlayerData[playerid][pInsured]);
+		cache_get_value_name_int(0, "addiction", PlayerData[playerid][pAddiction]);
+		cache_get_value_name_int(0, "money", PlayerData[playerid][pMoney]);
+		cache_get_value_name_int(0, "carry_limit", PlayerData[playerid][pCarryLimit]);
+		cache_get_value_name_int(0, "tutorial_done", PlayerData[playerid][pTutorialDone]);
+		LogAuthEvent(playerid, "account_found");
 
+		LoadPlayerInventory(playerid);
 		ShowLoginDialog(playerid);
 	}
 	else
 	{
+		PlayerData[playerid][pAccountId] = INVALID_ACCOUNT_ID;
+		LogAuthEvent(playerid, "account_missing");
 		ShowRegisterDialog(playerid);
+	}
+	return 1;
+}
+
+public OnAccountCreated(playerid)
+{
+	if (!IsPlayerConnected(playerid))
+	{
+		return 0;
+	}
+	PlayerData[playerid][pAccountId] = cache_insert_id();
+	PlayerData[playerid][pMoney] = STARTER_CASH;
+	if (GetPlayerMoney(playerid) < STARTER_CASH)
+	{
+		ResetPlayerMoney(playerid);
+		GivePlayerMoney(playerid, STARTER_CASH);
+	}
+	UpdateLastLogin(playerid);
+	SavePlayerState(playerid);
+	LogAuthEvent(playerid, "register_complete");
+	return 1;
+}
+
+public OnInventoryLoad(playerid)
+{
+	if (!IsPlayerConnected(playerid))
+	{
+		return 0;
+	}
+
+	new rows;
+	cache_get_row_count(rows);
+	for (new row = 0; row < rows; row++)
+	{
+		new itemid;
+		new amount;
+		cache_get_value_name_int(row, "item_id", itemid);
+		cache_get_value_name_int(row, "amount", amount);
+		if (itemid >= 0 && itemid < MAX_ITEMS && amount > 0)
+		{
+			PlayerItems[playerid][itemid] = amount;
+		}
+	}
+	return 1;
+}
+
+public OnStolenPlatesLoad()
+{
+	new rows;
+	cache_get_row_count(rows);
+	gStolenPlateCount = 0;
+	for (new row = 0; row < rows && row < MAX_STOLEN_PLATES; row++)
+	{
+		cache_get_value_name(row, "plate", gStolenPlates[gStolenPlateCount], MAX_PLATE_LEN);
+		gStolenPlateCount++;
 	}
 	return 1;
 }
 
 public OnPlayerCommandText(playerid, cmdtext[])
 {
+	new lspdCmd[32];
+	new lspdParams[96];
+	new lspdLen = strlen(cmdtext);
+	new lspdIdx = 0;
+	new lspdCmdLen = 0;
+
+	if (lspdLen == 0 || cmdtext[0] != '/')
+	{
+		return 0;
+	}
+
+	lspdIdx = 1;
+	while (lspdIdx < lspdLen && cmdtext[lspdIdx] > ' ' && lspdCmdLen < sizeof(lspdCmd) - 1)
+	{
+		lspdCmd[lspdCmdLen++] = cmdtext[lspdIdx++];
+	}
+	lspdCmd[lspdCmdLen] = '\0';
+
+	while (lspdIdx < lspdLen && cmdtext[lspdIdx] <= ' ')
+	{
+		lspdIdx++;
+	}
+
+	strmid(lspdParams, cmdtext, lspdIdx, lspdLen, sizeof(lspdParams));
+
+	if (HandleLspdCommand(playerid, lspdCmd, lspdParams))
+	{
+		return 1;
+	}
+
+	if (HandleGarageCommand(playerid, cmdtext))
+	{
+		return 1;
+	}
+
 	new idx;
 	new cmd[64];
-	new params[128];
 	cmd = strtok(cmdtext, idx);
 
 	if (!strlen(cmd))
@@ -1463,118 +4042,125 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		return 0;
 	}
 
-	ParseCommand(cmdtext, cmd, sizeof(cmd), params, sizeof(params));
-
-	if (!strcmp(cmd, "/alpr", true))
+	if (!strcmp(cmd, "/login", true))
 	{
-		if (gAlprEnabled[playerid])
+		if (PlayerData[playerid][pLogged])
 		{
-			StopAlpr(playerid);
+			SendClientMessage(playerid, -1, "You are already logged in.");
 			return 1;
 		}
-
-		if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+		if (!PlayerData[playerid][pAuthChecked])
 		{
-			SendClientMessage(playerid, -1, "You must be driving a police vehicle to use ALPR.");
+			SendClientMessage(playerid, -1, "Loading your account, retrying...");
+			StartAccountCheck(playerid);
 			return 1;
 		}
-
-		new vehicleid = GetPlayerVehicleID(playerid);
-		if (!IsPoliceVehicle(vehicleid))
+		if (PlayerData[playerid][pPassHash][0] == '\0')
 		{
-			SendClientMessage(playerid, -1, "This vehicle is not equipped with ALPR.");
+			ShowRegisterDialog(playerid);
 			return 1;
 		}
-
-		gAlprEnabled[playerid] = true;
-		StartAlpr(playerid);
-		SendClientMessage(playerid, -1, "ALPR enabled. Scanning for nearby plates.");
+		ShowLoginDialog(playerid);
 		return 1;
 	}
 
-	if (!strcmp(cmd, "/reportvehiclestolen", true)
-		|| !strcmp(cmd, "/reportvehstolen", true)
-		|| !strcmp(cmd, "/reportstolen", true))
+	if (!strcmp(cmd, "/register", true))
 	{
-		if (params[0] == '\0')
+		if (PlayerData[playerid][pLogged])
 		{
-			SendClientMessage(playerid, -1, "Usage: /reportvehiclestolen [numberplate]");
+			SendClientMessage(playerid, -1, "You are already logged in.");
 			return 1;
 		}
-
-		new plate[MAX_PLATE_LEN];
-		format(plate, sizeof(plate), "%s", params);
-		ToUpperStr(plate);
-
-		if (AddStolenPlate(plate))
+		if (!PlayerData[playerid][pAuthChecked])
 		{
-			SendClientMessage(playerid, -1, "Vehicle reported stolen. ALPR will flag it.");
+			SendClientMessage(playerid, -1, "Loading your account, retrying...");
+			StartAccountCheck(playerid);
+			return 1;
 		}
-		else
+		if (PlayerData[playerid][pPassHash][0] != '\0')
 		{
-			SendClientMessage(playerid, -1, "Unable to report vehicle stolen. Try again later.");
+			ShowLoginDialog(playerid);
+			return 1;
 		}
+		ShowRegisterDialog(playerid);
 		return 1;
 	}
 
-	if (!strcmp(cmd, "/reportvehiclefound", true)
-		|| !strcmp(cmd, "/reportvehfound", true)
-		|| !strcmp(cmd, "/reportfound", true))
+	if (!strcmp(cmd, "/help", true))
 	{
-		if (params[0] == '\0')
-		{
-			SendClientMessage(playerid, -1, "Usage: /reportvehiclefound [numberplate]");
-			return 1;
-		}
-
-		new plate[MAX_PLATE_LEN];
-		format(plate, sizeof(plate), "%s", params);
-		ToUpperStr(plate);
-
-		if (RemoveStolenPlate(plate))
-		{
-			SendClientMessage(playerid, -1, "Vehicle report cleared.");
-		}
-		else
-		{
-			SendClientMessage(playerid, -1, "No stolen vehicle report found for that plate.");
-		}
+		ShowHelpDialog(playerid);
 		return 1;
 	}
 
-	if (!strcmp(cmd, "/license", true))
+	if (!strcmp(cmd, "/guide", true))
 	{
-		if (!strcmp(params, "on", true))
-		{
-			gHasLicense[playerid] = true;
-			SendClientMessage(playerid, -1, "Your driver's license is now valid.");
-			return 1;
-		}
-		if (!strcmp(params, "off", true))
-		{
-			gHasLicense[playerid] = false;
-			SendClientMessage(playerid, -1, "Your driver's license has been suspended.");
-			return 1;
-		}
-		SendClientMessage(playerid, -1, "Usage: /license [on|off]");
+		ShowTutorialDialog(playerid);
 		return 1;
 	}
 
-	if (!strcmp(cmd, "/taxdue", true))
+	if (!strcmp(cmd, "/todo", true) || !strcmp(cmd, "/next", true) || !strcmp(cmd, "/whattodo", true))
 	{
-		if (!strcmp(params, "on", true))
+		ShowNextStepHint(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/warehouse", true) || !strcmp(cmd, "/wh", true))
+	{
+		if (PlayerData[playerid][pHasDelivery])
 		{
-			gTaxDue[playerid] = true;
-			SendClientMessage(playerid, -1, "Your vehicle taxes are now marked overdue.");
+			SendClientMessage(playerid, -1, "You already have a delivery route. Use /cancelbiz to clear it first.");
 			return 1;
 		}
-		if (!strcmp(params, "off", true))
+		SetPlayerCheckpoint(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z, 4.0);
+		SendClientMessage(playerid, -1, "Warehouse waypoint set.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/enter", true))
+	{
+		if (!PlayerData[playerid][pLogged])
 		{
-			gTaxDue[playerid] = false;
-			SendClientMessage(playerid, -1, "Your vehicle taxes are up to date.");
+			SendClientMessage(playerid, -1, "You must be logged in to use property teleports.");
 			return 1;
 		}
-		SendClientMessage(playerid, -1, "Usage: /taxdue [on|off]");
+
+		for (new i = 0; i < sizeof(gTeleports); i++)
+		{
+			if (IsPlayerNearTeleport(playerid, i, true))
+			{
+				if (!TryPropertyTeleport(playerid, i, true))
+				{
+					SendClientMessage(playerid, -1, "Teleport is on cooldown.");
+				}
+				return 1;
+			}
+		}
+
+		SendClientMessage(playerid, -1, "You are not near a property entrance.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/exit", true))
+	{
+		if (!PlayerData[playerid][pLogged])
+		{
+			SendClientMessage(playerid, -1, "You must be logged in to use property teleports.");
+			return 1;
+		}
+
+		for (new i = 0; i < sizeof(gTeleports); i++)
+		{
+			if (IsPlayerNearTeleport(playerid, i, false))
+			{
+				if (!TryPropertyTeleport(playerid, i, false))
+				{
+					SendClientMessage(playerid, -1, "Teleport is on cooldown.");
+				}
+				return 1;
+			}
+		}
+
+		SendClientMessage(playerid, -1, "You are not near a property exit.");
 		return 1;
 	}
 
@@ -1891,5 +4477,1283 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		return 1;
 	}
 
+	if (!strcmp(cmd, "/garage", true))
+	{
+		ShowGarageInfoDialog(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/repair", true))
+	{
+		if (!EnsureGarageAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		RepairVehicle(vehicleid);
+		SendClientMessage(playerid, -1, "Your vehicle has been repaired.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/paint", true))
+	{
+		if (!EnsureGarageAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new color1 = random(256);
+		new color2 = random(256);
+		ChangeVehicleColor(vehicleid, color1, color2);
+		SendClientMessage(playerid, -1, "Fresh paint applied.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/mod", true))
+	{
+		if (!EnsureGarageAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new component = 1010 + random(8);
+		AddVehicleComponent(vehicleid, component);
+		SendClientMessage(playerid, -1, "A basic component has been installed.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/lock", true))
+	{
+		if (!EnsureGarageAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		new bool:locked = (doors == 0);
+		ToggleVehicleLock(vehicleid, locked);
+		SendClientMessage(playerid, -1, locked ? "Vehicle locked." : "Vehicle unlocked.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/alarm", true))
+	{
+		if (!EnsureGarageAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		gVehicleAlarmOn[vehicleid] = !gVehicleAlarmOn[vehicleid];
+		SendClientMessage(playerid, -1, gVehicleAlarmOn[vehicleid] ? "Alarm installed." : "Alarm removed.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/wanted", true))
+	{
+		new message[128];
+		format(message, sizeof(message),
+			"Wanted cars: %d, %d, %d, %d, %d",
+			gWantedList[0],
+			gWantedList[1],
+			gWantedList[2],
+			gWantedList[3],
+			gWantedList[4]
+		);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/chop", true))
+	{
+		if (!EnsureChopAccess(playerid) || !EnsureVehicleAccess(playerid))
+		{
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new modelid = GetVehicleModel(vehicleid);
+		new bool:wanted = false;
+		for (new i = 0; i < sizeof(gWantedList); i++)
+		{
+			if (gWantedList[i] == modelid)
+			{
+				wanted = true;
+				break;
+			}
+		}
+		new partsGained = PARTS_PER_CHOP + (wanted ? 2 : 0);
+		PlayerData[playerid][pParts] += partsGained;
+		DestroyVehicle(vehicleid);
+		SendClientMessage(playerid, -1, "Vehicle chopped for parts.");
+		if (wanted)
+		{
+			SendClientMessage(playerid, -1, "Bonus parts for a wanted car.");
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/craft", true))
+	{
+		if (PlayerData[playerid][pParts] < PARTS_FOR_METAL)
+		{
+			SendClientMessage(playerid, -1, "Not enough parts. Chop more vehicles.");
+			return 1;
+		}
+		PlayerData[playerid][pParts] -= PARTS_FOR_METAL;
+		GivePlayerMoney(playerid, 500);
+		SendClientMessage(playerid, -1, "Crafted metal parts and sold for $500.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/alpr", true))
+	{
+		if (gAlprEnabled[playerid])
+		{
+			StopAlpr(playerid);
+			return 1;
+		}
+
+		if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+		{
+			SendClientMessage(playerid, -1, "You must be driving a police vehicle to use ALPR.");
+			return 1;
+		}
+
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (!IsPoliceVehicle(vehicleid))
+		{
+			SendClientMessage(playerid, -1, "This vehicle is not equipped with ALPR.");
+			return 1;
+		}
+
+		gAlprEnabled[playerid] = true;
+		StartAlpr(playerid);
+		SendClientMessage(playerid, -1, "ALPR enabled. Scanning for nearby plates.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/reportvehiclestolen", true)
+		|| !strcmp(cmd, "/reportvehstolen", true)
+		|| !strcmp(cmd, "/reportstolen", true))
+	{
+		if (lspdParams[0] == '\0')
+		{
+			SendClientMessage(playerid, -1, "Usage: /reportvehiclestolen [numberplate]");
+			return 1;
+		}
+
+		new plate[MAX_PLATE_LEN];
+		format(plate, sizeof(plate), "%s", lspdParams);
+		ToUpperStr(plate);
+
+		if (AddStolenPlate(plate))
+		{
+			SendClientMessage(playerid, -1, "Vehicle reported stolen. ALPR will flag it.");
+		}
+		else
+		{
+			SendClientMessage(playerid, -1, "Unable to report vehicle stolen. Try again later.");
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/reportvehiclefound", true)
+		|| !strcmp(cmd, "/reportvehfound", true)
+		|| !strcmp(cmd, "/reportfound", true))
+	{
+		if (lspdParams[0] == '\0')
+		{
+			SendClientMessage(playerid, -1, "Usage: /reportvehiclefound [numberplate]");
+			return 1;
+		}
+
+		new plate[MAX_PLATE_LEN];
+		format(plate, sizeof(plate), "%s", lspdParams);
+		ToUpperStr(plate);
+
+		if (RemoveStolenPlate(plate))
+		{
+			SendClientMessage(playerid, -1, "Vehicle report cleared.");
+		}
+		else
+		{
+			SendClientMessage(playerid, -1, "No stolen vehicle report found for that plate.");
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/license", true))
+	{
+		if (!strcmp(lspdParams, "on", true))
+		{
+			gHasLicense[playerid] = true;
+			SendClientMessage(playerid, -1, "Your driver's license is now valid.");
+			return 1;
+		}
+		if (!strcmp(lspdParams, "off", true))
+		{
+			gHasLicense[playerid] = false;
+			SendClientMessage(playerid, -1, "Your driver's license has been suspended.");
+			return 1;
+		}
+		SendClientMessage(playerid, -1, "Usage: /license [on|off]");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxdue", true))
+	{
+		if (!strcmp(lspdParams, "on", true))
+		{
+			gTaxDue[playerid] = true;
+			SendClientMessage(playerid, -1, "Your vehicle taxes are now marked overdue.");
+			return 1;
+		}
+		if (!strcmp(lspdParams, "off", true))
+		{
+			gTaxDue[playerid] = false;
+			SendClientMessage(playerid, -1, "Your vehicle taxes are up to date.");
+			return 1;
+		}
+		SendClientMessage(playerid, -1, "Usage: /taxdue [on|off]");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/dmv", true))
+	{
+		if (!PlayerData[playerid][pLogged])
+		{
+			SendClientMessage(playerid, -1, "You must be logged in to use the DMV.");
+			return 1;
+		}
+
+		ShowDmvDialog(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/teleports", true))
+	{
+		SendClientMessage(playerid, -1, "Property teleports are marked with green pickups.");
+		SendClientMessage(playerid, -1, "Use /enter at entrances and /exit at exits.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/radioshow", true))
+	{
+		PlayerData[playerid][pRadioVisible] = true;
+		SendClientMessage(playerid, -1, "XM Radio UI is now visible.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/radiohide", true))
+	{
+		PlayerData[playerid][pRadioVisible] = false;
+		SendClientMessage(playerid, -1, "XM Radio UI is now hidden.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/setstation", true))
+	{
+		if (GetPlayerInterior(playerid) == 0)
+		{
+			SendClientMessage(playerid, -1, "You must be inside a house or property to use this command.");
+			return 1;
+		}
+
+		new arg[16];
+		if (!GetCommandArg(cmdtext, 1, arg, sizeof(arg)))
+		{
+			new prompt[64];
+			format(prompt, sizeof(prompt), "Enter station number (1-%d):", MAX_STATIONS);
+			ShowPlayerDialog(playerid, DIALOG_SETSTATION, DIALOG_STYLE_INPUT, "Set Station", prompt, "Set", "Cancel");
+			return 1;
+		}
+
+		new station = strval(arg);
+		if (!PlayStationForPlayer(playerid, station))
+		{
+			return 1;
+		}
+
+		new message[64];
+		format(message, sizeof(message), "Tuned to station %d.", station);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/reloadcinema", true))
+	{
+		SetupCinemaInterior();
+		SendClientMessage(playerid, -1, "Cinema interior reloaded.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/cinemaoff", true))
+	{
+		if (!IsPlayerAdmin(playerid))
+		{
+			SendClientMessage(playerid, -1, "You must be an RCON admin to stop broadcasts.");
+			return 1;
+		}
+
+		StopCinemaBroadcast();
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/leavecinema", true))
+	{
+		if (!gCinemaWatching[playerid])
+		{
+			SendClientMessage(playerid, -1, "You are not watching the cinema.");
+			return 1;
+		}
+
+		gCinemaWatching[playerid] = false;
+		SendClientMessage(playerid, -1, "You stopped watching the cinema.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/cinema", true))
+	{
+		if (!IsPlayerAdmin(playerid))
+		{
+			SendClientMessage(playerid, -1, "You must be an RCON admin to start broadcasts.");
+			return 1;
+		}
+
+		if (strlen(lspdParams) < 3)
+		{
+			SendClientMessage(playerid, -1, "Usage: /cinema <youtube_id_or_url>");
+			return 1;
+		}
+
+		StartCinemaBroadcast(lspdParams);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/businesses", true))
+	{
+		SendClientMessage(playerid, -1, "Businesses for sale:");
+		for (new i = 0; i < MAX_BUSINESSES; i++)
+		{
+			if (BusinessData[i][bOwner] == INVALID_PLAYER_ID)
+			{
+				new message[96];
+				format(message, sizeof(message), "%d) %s - $%d", i + 1, gBusinessTypeNames[_:BusinessData[i][bType]], BusinessData[i][bPrice]);
+				SendClientMessage(playerid, -1, message);
+			}
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/bizhelp", true))
+	{
+		SendClientMessage(playerid, -1, "Business commands: /businesses, /buybiz, /bizstatus, /setcomponentprice, /sellbiz, /buyitem, /buycrates, /deliverbiz, /cancelbiz");
+		SendClientMessage(playerid, -1, "Tip: press Y near a business for details. Buy crates at the warehouse marker.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/buybiz", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "You are not near a business.");
+			return 1;
+		}
+
+		if (BusinessData[businessId][bOwner] != INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "This business is already owned.");
+			return 1;
+		}
+
+		if (GetPlayerMoney(playerid) < BusinessData[businessId][bPrice])
+		{
+			SendClientMessage(playerid, -1, "You cannot afford this business.");
+			return 1;
+		}
+
+		GivePlayerMoney(playerid, -BusinessData[businessId][bPrice]);
+		BusinessData[businessId][bOwner] = playerid;
+		BusinessData[businessId][bComponents] = BUSINESS_COMPONENTS_DEFAULT;
+		UpdateBusinessLabel(businessId);
+		SendClientMessage(playerid, -1, "Business purchased. Press Y to manage it.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/bizstatus", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "You are not near a business.");
+			return 1;
+		}
+
+		ShowBusinessStatus(playerid, businessId);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/setcomponentprice", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "You are not near a business.");
+			return 1;
+		}
+
+		if (BusinessData[businessId][bOwner] != playerid)
+		{
+			SendClientMessage(playerid, -1, "Only the owner can update component prices.");
+			return 1;
+		}
+
+		new priceToken[16];
+		GetCommandToken(cmdtext, idx, priceToken, sizeof(priceToken));
+		new price = strval(priceToken);
+		if (price < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /setcomponentprice [amount]");
+			return 1;
+		}
+
+		BusinessData[businessId][bComponentPrice] = price;
+		SendClientMessage(playerid, -1, "Component purchase price updated.");
+		ShowBusinessStatus(playerid, businessId);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/sellbiz", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "You are not near a business.");
+			return 1;
+		}
+
+		if (BusinessData[businessId][bOwner] != playerid)
+		{
+			SendClientMessage(playerid, -1, "Only the owner can sell this business.");
+			return 1;
+		}
+
+		new refund = BusinessData[businessId][bPrice] / 2;
+		GivePlayerMoney(playerid, refund);
+		BusinessData[businessId][bOwner] = INVALID_PLAYER_ID;
+		BusinessData[businessId][bComponents] = 0;
+		BusinessData[businessId][bEarnings] = 0;
+		UpdateBusinessLabel(businessId);
+		SendClientMessage(playerid, -1, "Business sold back to the market.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/buyitem", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "You are not near a business.");
+			return 1;
+		}
+
+		new costToken[16];
+		new countToken[16];
+		GetCommandToken(cmdtext, idx, costToken, sizeof(costToken));
+		GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
+		new cost = strval(costToken);
+		new count = strval(countToken);
+		if (count < 1)
+		{
+			count = 1;
+		}
+		if (cost < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /buyitem [cost] [count]");
+			return 1;
+		}
+
+		if (BusinessData[businessId][bComponents] < count)
+		{
+			SendClientMessage(playerid, -1, "This business is out of components.");
+			return 1;
+		}
+
+		if (GetPlayerMoney(playerid) < cost)
+		{
+			SendClientMessage(playerid, -1, "You cannot afford that purchase.");
+			return 1;
+		}
+
+		GivePlayerMoney(playerid, -cost);
+		BusinessData[businessId][bComponents] -= count;
+
+		new owner = BusinessData[businessId][bOwner];
+		if (owner != INVALID_PLAYER_ID && IsPlayerConnected(owner))
+		{
+			new payout = cost;
+			if (BusinessData[businessId][bType] == BUSINESS_AMMUNATION)
+			{
+				payout = cost / 2;
+			}
+			GivePlayerMoney(owner, payout);
+			BusinessData[businessId][bEarnings] += payout;
+		}
+
+		SendClientMessage(playerid, -1, "Purchase completed.");
+		UpdateBusinessLabel(businessId);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/buycrates", true))
+	{
+		if (!IsNearComponentWarehouse(playerid))
+		{
+			SendClientMessage(playerid, -1, "You must be at the component warehouse to buy crates.");
+			return 1;
+		}
+
+		new countToken[16];
+		GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
+		new count = strval(countToken);
+		if (count < 1)
+		{
+			SendClientMessage(playerid, -1, "Usage: /buycrates [count]");
+			return 1;
+		}
+
+		new totalCost = count * COMPONENT_CRATE_COST;
+		if (GetPlayerMoney(playerid) < totalCost)
+		{
+			SendClientMessage(playerid, -1, "You cannot afford that many crates.");
+			return 1;
+		}
+
+		GivePlayerMoney(playerid, -totalCost);
+		PlayerData[playerid][pCrates] += count;
+		SendClientMessage(playerid, -1, "Crates purchased. Deliver them with /deliverbiz [businessId].");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/deliverbiz", true))
+	{
+		new businessToken[16];
+		GetCommandToken(cmdtext, idx, businessToken, sizeof(businessToken));
+		new businessId = strval(businessToken) - 1;
+		if (businessId < 0 || businessId >= MAX_BUSINESSES)
+		{
+			SendClientMessage(playerid, -1, "Usage: /deliverbiz [businessId]");
+			return 1;
+		}
+		if (PlayerData[playerid][pCrates] < 1)
+		{
+			SendClientMessage(playerid, -1, "You have no crates to deliver.");
+			return 1;
+		}
+		SetPlayerCheckpoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ], 4.0);
+		PlayerData[playerid][pHasDelivery] = true;
+		PlayerData[playerid][pDeliveryBiz] = businessId;
+		SendClientMessage(playerid, -1, "Delivery GPS set. Drive to the checkpoint to deliver components.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/cancelbiz", true))
+	{
+		ClearDeliveryCheckpoint(playerid);
+		SendClientMessage(playerid, -1, "Delivery route cleared.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vbreakin", true) || !strcmp(cmd, "/vbi", true))
+	{
+		if (PlayerData[playerid][pMiniGame] != MINIGAME_NONE)
+		{
+			SendClientMessage(playerid, -1, "You are already attempting a minigame.");
+			return 1;
+		}
+
+		if (GetPlayerState(playerid) != PLAYER_STATE_ONFOOT)
+		{
+			SendClientMessage(playerid, -1, "You need to be on foot to start lockpicking.");
+			return 1;
+		}
+
+		new vehicleid = GetNearestVehicle(playerid, 3.5);
+		if (vehicleid == INVALID_VEHICLE_ID)
+		{
+			SendClientMessage(playerid, -1, "No vehicle nearby to break into.");
+			return 1;
+		}
+
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		if (doors == 0)
+		{
+			SendClientMessage(playerid, -1, "This vehicle is already unlocked.");
+			return 1;
+		}
+
+		StartMiniGame(playerid, vehicleid, MINIGAME_LOCKPICK);
+		SendClientMessage(playerid, -1, "Lockpicking started. Follow the on-screen prompts.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/hotwire", true))
+	{
+		if (PlayerData[playerid][pMiniGame] != MINIGAME_NONE)
+		{
+			SendClientMessage(playerid, -1, "You are already attempting a minigame.");
+			return 1;
+		}
+
+		if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+		{
+			SendClientMessage(playerid, -1, "You need to be in the driver's seat to hotwire.");
+			return 1;
+		}
+
+		new vehicleid = GetPlayerVehicleID(playerid);
+		new engine, lights, alarm, doors, bonnet, boot, objective;
+		GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+		if (engine == 1)
+		{
+			SendClientMessage(playerid, -1, "The engine is already running.");
+			return 1;
+		}
+
+		StartMiniGame(playerid, vehicleid, MINIGAME_HOTWIRE);
+		SendClientMessage(playerid, -1, "Hotwiring started. Follow the on-screen prompts.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxistart", true))
+	{
+		if (gTaxiOnDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You are already on duty as a taxi driver.");
+			return 1;
+		}
+		if (GetPlayerState(playerid) != PLAYER_STATE_DRIVER)
+		{
+			SendClientMessage(playerid, -1, "You must be driving a taxi to go on duty.");
+			return 1;
+		}
+		if (!TaxiIsVehicleTaxi(GetPlayerVehicleID(playerid)))
+		{
+			SendClientMessage(playerid, -1, "You must be driving a taxi vehicle to go on duty.");
+			return 1;
+		}
+		gTaxiOnDuty[playerid] = true;
+		TaxiFare[playerid] = TAXI_DEFAULT_FARE;
+		SendClientMessage(playerid, -1, "You are now on duty as a taxi driver.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxistop", true))
+	{
+		if (!gTaxiOnDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You are not on duty as a taxi driver.");
+			return 1;
+		}
+		TaxiResetRequestForDriver(playerid);
+		gTaxiOnDuty[playerid] = false;
+		TaxiStopMeter(playerid);
+		SendClientMessage(playerid, -1, "You are now off duty.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxi", true))
+	{
+		if (gTaxiRequesting[playerid])
+		{
+			SendClientMessage(playerid, -1, "You already have a pending taxi request.");
+			return 1;
+		}
+		if (TaxiCustomerForDriver[playerid] != INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "You cannot request a taxi while on a job.");
+			return 1;
+		}
+		gTaxiRequesting[playerid] = true;
+		TaxiDriverForCustomer[playerid] = INVALID_PLAYER_ID;
+
+		new name[MAX_PLAYER_NAME];
+		new message[96];
+		GetPlayerName(playerid, name, sizeof(name));
+		format(message, sizeof(message), "Taxi request from %s. Use /taxiaccept to take the call.", name);
+		TaxiSendToOnDuty(message);
+		SendClientMessage(playerid, -1, "Taxi request sent. Please wait for a driver to accept.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxiaccept", true))
+	{
+		if (!gTaxiOnDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to accept taxi requests.");
+			return 1;
+		}
+		if (TaxiCustomerForDriver[playerid] != INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "You already accepted a taxi request.");
+			return 1;
+		}
+
+		new customerid = INVALID_PLAYER_ID;
+		for (new i = 0; i < MAX_PLAYERS; i++)
+		{
+			if (IsPlayerConnected(i) && gTaxiRequesting[i] && TaxiDriverForCustomer[i] == INVALID_PLAYER_ID)
+			{
+				customerid = i;
+				break;
+			}
+		}
+
+		if (customerid == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "There are no pending taxi requests.");
+			return 1;
+		}
+
+		TaxiDriverForCustomer[customerid] = playerid;
+		TaxiCustomerForDriver[playerid] = customerid;
+
+		new name[MAX_PLAYER_NAME];
+		new message[96];
+		GetPlayerName(playerid, name, sizeof(name));
+		format(message, sizeof(message), "Taxi request accepted by %s.", name);
+		SendClientMessage(customerid, -1, message);
+		SendClientMessage(playerid, -1, "Taxi request accepted. Contact the customer and proceed.");
+		new Float:x, Float:y, Float:z;
+		GetPlayerPos(customerid, x, y, z);
+		SetPlayerCheckpoint(playerid, x, y, z, 4.0);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxicancel", true))
+	{
+		if (gTaxiRequesting[playerid])
+		{
+			new driverid = TaxiDriverForCustomer[playerid];
+			TaxiResetRequestForCustomer(playerid);
+			SendClientMessage(playerid, -1, "Taxi request cancelled.");
+			if (driverid != INVALID_PLAYER_ID)
+			{
+				SendClientMessage(driverid, -1, "Customer cancelled the taxi request.");
+			}
+			return 1;
+		}
+
+		if (TaxiCustomerForDriver[playerid] != INVALID_PLAYER_ID)
+		{
+			new customerid = TaxiCustomerForDriver[playerid];
+			TaxiResetRequestForDriver(playerid);
+			SendClientMessage(playerid, -1, "You cancelled the accepted taxi request.");
+			if (customerid != INVALID_PLAYER_ID)
+			{
+				SendClientMessage(customerid, -1, "The taxi driver cancelled your request.");
+			}
+			TaxiStopMeter(playerid);
+			return 1;
+		}
+
+		SendClientMessage(playerid, -1, "You have no taxi request to cancel.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxidone", true))
+	{
+		if (TaxiCustomerForDriver[playerid] == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "You have no active taxi request.");
+			return 1;
+		}
+
+		new customerid = TaxiCustomerForDriver[playerid];
+		TaxiResetRequestForDriver(playerid);
+		SendClientMessage(playerid, -1, "Taxi request completed.");
+		SendClientMessage(customerid, -1, "Taxi ride completed. Please roleplay the payment.");
+		TaxiStopMeter(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/fare", true))
+	{
+		if (!gTaxiOnDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to set a fare.");
+			return 1;
+		}
+
+		new amountArg[64];
+		amountArg = strtok(cmdtext, idx);
+		if (!strlen(amountArg))
+		{
+			SendClientMessage(playerid, -1, "Usage: /fare [amount]");
+			return 1;
+		}
+
+		new amount = strval(amountArg);
+		if (amount < TAXI_MIN_FARE || amount > TAXI_MAX_FARE)
+		{
+			SendClientMessage(playerid, -1, "Fare must be between $1 and $100.");
+			return 1;
+		}
+
+		TaxiFare[playerid] = amount;
+		new message[64];
+		format(message, sizeof(message), "Taxi fare set to $%d.", amount);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taximeter", true))
+	{
+		if (!gTaxiOnDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to use the taxi meter.");
+			return 1;
+		}
+		if (TaxiCustomerForDriver[playerid] == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "You must have an active request to use the taxi meter.");
+			return 1;
+		}
+		if (TaxiMeterActive[playerid])
+		{
+			TaxiStopMeter(playerid);
+		}
+		else
+		{
+			TaxiStartMeter(playerid);
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/taxirent", true))
+	{
+		new minutes_left = TaxiMinutesRemaining(playerid);
+		if (minutes_left == 0)
+		{
+			if (!ChargePlayer(playerid, TAXI_RENTAL_COST))
+			{
+				return 1;
+			}
+			TaxiRentalEndTick[playerid] = GetTickCount() + (TAXI_RENTAL_MINUTES * 60000);
+			TaxiRentalNotifiedFive[playerid] = false;
+			TaxiRentalNotifiedOne[playerid] = false;
+			if (TaxiRentalVehicle[playerid] == INVALID_VEHICLE_ID)
+			{
+				new Float:x, Float:y, Float:z, Float:a;
+				GetPlayerPos(playerid, x, y, z);
+				GetPlayerFacingAngle(playerid, a);
+				TaxiRentalVehicle[playerid] = CreateVehicle(420, x + 2.0, y, z, a, -1, -1, 0);
+				InitVehiclePlate(TaxiRentalVehicle[playerid]);
+				PutPlayerInVehicle(playerid, TaxiRentalVehicle[playerid], 0);
+			}
+			new message[64];
+			format(message, sizeof(message), "Taxi rented for %d minutes. Cost: $%d.", TAXI_RENTAL_MINUTES, TAXI_RENTAL_COST);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+
+		if (minutes_left > TAXI_RENTAL_REMINDER_FIVE)
+		{
+			SendClientMessage(playerid, -1, "You can only extend rental time when 5 minutes or less remain.");
+			return 1;
+		}
+
+		if (!ChargePlayer(playerid, TAXI_RENTAL_COST))
+		{
+			return 1;
+		}
+		TaxiRentalEndTick[playerid] += TAXI_RENTAL_EXTEND_MINUTES * 60000;
+		TaxiRentalNotifiedFive[playerid] = false;
+		TaxiRentalNotifiedOne[playerid] = false;
+		new message[64];
+		format(message, sizeof(message), "Taxi rental extended by %d minutes. Cost: $%d.", TAXI_RENTAL_EXTEND_MINUTES, TAXI_RENTAL_COST);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/stoptaxirent", true))
+	{
+		if (TaxiRentalEndTick[playerid] == 0)
+		{
+			SendClientMessage(playerid, -1, "You are not renting a taxi.");
+			return 1;
+		}
+
+		TaxiRentalEndTick[playerid] = 0;
+		TaxiRentalNotifiedFive[playerid] = false;
+		TaxiRentalNotifiedOne[playerid] = false;
+		SendClientMessage(playerid, -1, "Taxi rental stopped. Return the taxi to avoid towing fees.");
+		new message[96];
+		format(message, sizeof(message), "Potential fees: $%d towing, $%d damage (if applicable).", TAXI_TOW_FEE, TAXI_DAMAGE_FEE);
+		SendClientMessage(playerid, -1, message);
+		if (TaxiRentalVehicle[playerid] != INVALID_VEHICLE_ID)
+		{
+			DestroyVehicle(TaxiRentalVehicle[playerid]);
+			TaxiRentalVehicle[playerid] = INVALID_VEHICLE_ID;
+		}
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/pet", true))
+	{
+		new action[64];
+		action = strtok(cmdtext, idx);
+
+		if (!strlen(action))
+		{
+			SendClientMessage(playerid, -1, "Usage: /pet spawn <dog1|dog2|dog3|dog4|dog5|cat>");
+			SendClientMessage(playerid, -1, "Tasks: /pet follow | come | stay | wander | sit | bark | dismiss");
+			return 1;
+		}
+
+		if (!strcmp(action, "spawn", true))
+		{
+			new petName[64];
+			petName = strtok(cmdtext, idx);
+			if (!strlen(petName))
+			{
+				SendClientMessage(playerid, -1, "Usage: /pet spawn <dog1|dog2|dog3|dog4|dog5|cat>");
+				return 1;
+			}
+
+			new petIndex = GetPetIndex(petName);
+			if (petIndex == -1)
+			{
+				SendClientMessage(playerid, -1, "Unknown pet type. Try dog1-5 or cat.");
+				return 1;
+			}
+
+			if (!CreatePet(playerid, petIndex))
+			{
+				SendClientMessage(playerid, -1, "Failed to spawn pet.");
+				return 1;
+			}
+
+			SendClientMessage(playerid, -1, "Your pet is ready. Use /pet follow to make it follow you.");
+			return 1;
+		}
+
+		if (!PetExists(playerid))
+		{
+			SendClientMessage(playerid, -1, "You don't have a pet yet. Use /pet spawn <type>.");
+			return 1;
+		}
+
+		if (!strcmp(action, "follow", true))
+		{
+			SetPetTask(playerid, PET_TASK_FOLLOW);
+			SendClientMessage(playerid, -1, "Your pet will follow you.");
+			return 1;
+		}
+
+		if (!strcmp(action, "come", true))
+		{
+			new Float:x, Float:y, Float:z;
+			GetPlayerPos(playerid, x, y, z);
+			SetActorPos(PlayerData[playerid][pPetActor], x + 1.0, y, z);
+			SetPetTask(playerid, PET_TASK_STAY);
+			SendClientMessage(playerid, -1, "Your pet comes to you.");
+			return 1;
+		}
+
+		if (!strcmp(action, "stay", true))
+		{
+			SetPetTask(playerid, PET_TASK_STAY);
+			SendClientMessage(playerid, -1, "Your pet will stay here.");
+			return 1;
+		}
+
+		if (!strcmp(action, "wander", true))
+		{
+			SetPetTask(playerid, PET_TASK_WANDER);
+			SendClientMessage(playerid, -1, "Your pet will wander nearby.");
+			return 1;
+		}
+
+		if (!strcmp(action, "sit", true))
+		{
+			ApplyPetAnimation(playerid, "PED", "SEAT_idle", 4.1, 1, 0, 0, 0, 0);
+			SendClientMessage(playerid, -1, "Your pet sits down.");
+			return 1;
+		}
+
+		if (!strcmp(action, "bark", true))
+		{
+			ApplyPetAnimation(playerid, "PED", "IDLE_chat", 4.1, 0, 0, 0, 0, 0);
+			SendClientMessage(playerid, -1, "Your pet barks.");
+			return 1;
+		}
+
+		if (!strcmp(action, "dismiss", true))
+		{
+			DestroyPet(playerid);
+			SendClientMessage(playerid, -1, "Your pet has been dismissed.");
+			return 1;
+		}
+
+		SendClientMessage(playerid, -1, "Unknown pet command. Use /pet for help.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/drug", true))
+	{
+		new drug[64];
+		drug = strtok(cmdtext, idx);
+		if (!strlen(drug))
+		{
+			SendClientMessage(playerid, -1, "Usage: /drug [marijuana|cocaine|heroin]");
+			return 1;
+		}
+
+		if (!strcmp(drug, "marijuana", true))
+		{
+			UseMarijuana(playerid);
+			SendClientMessage(playerid, -1, "You smoke marijuana and feel a light buzz.");
+			return 1;
+		}
+		if (!strcmp(drug, "cocaine", true))
+		{
+			UseCocaine(playerid);
+			SendClientMessage(playerid, -1, "You take cocaine and feel a strong rush.");
+			return 1;
+		}
+		if (!strcmp(drug, "heroin", true))
+		{
+			UseHeroin(playerid);
+			SendClientMessage(playerid, -1, "You take heroin and feel a heavy effect.");
+			return 1;
+		}
+
+		SendClientMessage(playerid, -1, "Unknown drug. Use marijuana, cocaine, or heroin.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/methadone", true))
+	{
+		UseMethadone(playerid);
+		SendClientMessage(playerid, -1, "You take methadone and your addiction eases.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/addiction", true))
+	{
+		new message[64];
+		format(message, sizeof(message), "Addiction: %d | Carry limit: %dkg", PlayerData[playerid][pAddiction], PlayerData[playerid][pCarryLimit]);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
 	return 0;
+}
+
+public bool:HandleLspdCommand(playerid, const cmd[], const params[])
+{
+	if (!strcmp(cmd, "pduty", true))
+	{
+		SetPlayerHealth(playerid, 100.0);
+		SetPlayerArmour(playerid, 100.0);
+		SetPlayerColor(playerid, 0x3399FFFF);
+		SendClientMessage(playerid, -1, "LSPD duty loadout applied.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "equipment", true))
+	{
+		if (HasCommandPrefix(params, "swat"))
+		{
+			SetPlayerHealth(playerid, 100.0);
+			SetPlayerArmour(playerid, 100.0);
+			GivePlayerWeapon(playerid, 24, 150);
+			GivePlayerWeapon(playerid, 31, 300);
+			SetPlayerColor(playerid, 0x3399FFFF);
+			SendClientMessage(playerid, -1, "LSPD SWAT equipment issued.");
+			return true;
+		}
+
+		if (HasCommandPrefix(params, "db"))
+		{
+			SetPlayerHealth(playerid, 100.0);
+			GivePlayerWeapon(playerid, 22, 120);
+			SendClientMessage(playerid, -1, "LSPD DB equipment issued.");
+			return true;
+		}
+
+		SetPlayerHealth(playerid, 100.0);
+		SetPlayerArmour(playerid, 100.0);
+		GivePlayerWeapon(playerid, 23, 150);
+		GivePlayerWeapon(playerid, 22, 120);
+		SetPlayerColor(playerid, 0x3399FFFF);
+		SendClientMessage(playerid, -1, "LSPD equipment issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "take", true))
+	{
+		new weapon_id = strval(params);
+		switch (weapon_id)
+		{
+			case 1: GivePlayerWeapon(playerid, 31, 200);
+			case 2: GivePlayerWeapon(playerid, 25, 40);
+			case 3: GivePlayerWeapon(playerid, 34, 20);
+			default:
+			{
+				SendClientMessage(playerid, -1, "Usage: /take [1=AR, 2=Shotgun, 3=Sniper]");
+				return true;
+			}
+		}
+
+		SendClientMessage(playerid, -1, "Weapon taken from cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "takespike", true))
+	{
+		SendClientMessage(playerid, -1, "You retrieve a spike strip from the cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "spike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip placed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "removespike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip picked up.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "placespike", true))
+	{
+		SendClientMessage(playerid, -1, "Spike strip returned to the cruiser.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "uniform", true))
+	{
+		SendClientMessage(playerid, -1, "Uniform customization is not implemented yet.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "r", true) || !strcmp(cmd, "radio", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /r [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0x33CCFFFF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "dep", true) || !strcmp(cmd, "department", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /dep [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0x66FFCCFF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "m", true) || !strcmp(cmd, "megaphone", true))
+	{
+		if (!strlen(params))
+		{
+			SendClientMessage(playerid, -1, "Usage: /m [message]");
+			return true;
+		}
+		SendClientMessage(playerid, 0xFFFF99FF, params);
+		return true;
+	}
+
+	if (!strcmp(cmd, "arrest", true))
+	{
+		SendClientMessage(playerid, -1, "Arrest command acknowledged.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "cuff", true))
+	{
+		SendClientMessage(playerid, -1, "Suspect cuffed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "uncuff", true))
+	{
+		SendClientMessage(playerid, -1, "Suspect uncuffed.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "panic", true))
+	{
+		SendClientMessage(playerid, 0xFF4444FF, "PANIC BUTTON ACTIVATED!");
+		return true;
+	}
+
+	if (!strcmp(cmd, "mdc", true))
+	{
+		SendClientMessage(playerid, -1, "MDC terminal not implemented yet.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "radar", true))
+	{
+		new dist;
+		new speed;
+		if (!ParseTwoInts(params, dist, speed))
+		{
+			SendClientMessage(playerid, -1, "Usage: /radar [distance] [speed]");
+			return true;
+		}
+		SendClientMessage(playerid, -1, "Speed radar enabled.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "radaroff", true))
+	{
+		SendClientMessage(playerid, -1, "Speed radar disabled.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "setpatrol", true))
+	{
+		SendClientMessage(playerid, -1, "Vehicle patrol label set.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "fine", true))
+	{
+		SendClientMessage(playerid, -1, "Fine issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "vfine", true))
+	{
+		SendClientMessage(playerid, -1, "Vehicle fine issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "checkfines", true))
+	{
+		SendClientMessage(playerid, -1, "No active fines found.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "checkvehiclefines", true))
+	{
+		SendClientMessage(playerid, -1, "No active vehicle fines found.");
+		return true;
+	}
+
+	return false;
 }
