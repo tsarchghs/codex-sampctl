@@ -1,12 +1,12 @@
 {
 	"user": "tsarchghs",
 	"repo": "day2",
-	"tag": "0.0.1",
 	"entry": "test2.pwn",
 	"output": "gamemodes/test2.amx",
 	"dependencies": [
 		"pawn-lang/samp-stdlib",
-		"pBlueG/SA-MP-MySQL:R41-4"
+		"pBlueG/SA-MP-MySQL:R41-4",
+		"pawn-lang/YSI-Includes:v5.10.0006"
 	],
 	"local": true,
 	"runtime": {

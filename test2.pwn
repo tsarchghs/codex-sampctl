@@ -25,6 +25,10 @@
 #define DIALOG_REGISTER_CANCEL 15
 #define DIALOG_HELP           16
 #define DIALOG_TUTORIAL       17
+#define DIALOG_PHONE          18
+#define DIALOG_STATUS         19
+#define DIALOG_MAP            2300
+#define DIALOG_GPS            2301
 
 #define PASSWORD_LEN 64
 #define MIN_PASSWORD_LEN 6
@@ -37,6 +41,14 @@
 #define INVALID_ACCOUNT_ID 0
 #define DRUG_EFFECT_INTERVAL 60000
 #define ADDICTION_DECAY_INTERVAL (3 * 60 * 60 * 1000)
+#define BASE_CARRY_LIMIT_KG 50
+#define MAX_CARRY_LIMIT_KG 70
+#define NEED_MAX 100
+#define NEED_WARN 25
+#define ECON_TICK_MS 300000
+#define FACTION_SALARY_TICK_MS (15 * 60 * 1000)
+#define ECON_INCOME_TAX_RATE 0.05
+#define VEHICLE_TRUNK_CAPACITY_KG 120
 
 #define MINIGAME_NONE     0
 #define MINIGAME_LOCKPICK 1
@@ -90,9 +102,15 @@
 #define TAXI_DAMAGE_FEE 250
 #define TAXI_METER_RATE_MS 60000
 
-#define MAX_ITEMS 12
+#define MAX_ITEMS 21
 #define MAX_DROPS 100
 #define MAX_ITEM_NAME 24
+#define STORE_PRICE_NONE -1
+#define ACTIVITY_JOB (1 << 0)
+#define ACTIVITY_TAXI (1 << 1)
+#define ACTIVITY_DELIVERY (1 << 2)
+#define ACTIVITY_DMV (1 << 3)
+#define ACTIVITY_BONUS_AMOUNT 500
 
 #define CINEMA_SCREEN_MODEL 18880
 #define CINEMA_SEAT_MODEL_1 1723
@@ -104,6 +122,10 @@
 #define CINEMA_POINT_Z  15.0
 
 #define CINEMA_RADIUS 3.0
+
+#define FISH_VENDOR_X 392.8
+#define FISH_VENDOR_Y -2074.5
+#define FISH_VENDOR_Z 7.83
 
 #define PET_UPDATE_MS 1000
 #define PET_WANDER_RADIUS 50.0
@@ -129,6 +151,10 @@ new const gPetNames[][] =
 	"cat"
 };
 
+new gStorePrices[MAX_ITEMS];
+new FishingVendorPickup;
+new Text3D:FishingVendorLabel;
+
 #define MAX_BUSINESSES 6
 #define BUSINESS_BUY_RADIUS 3.0
 #define BUSINESS_COMPONENTS_DEFAULT 50
@@ -142,6 +168,10 @@ new const gPetNames[][] =
 new BusinessPickups[MAX_BUSINESSES];
 new Text3D:BusinessLabels[MAX_BUSINESSES];
 new WarehousePickup;
+new bool:gCheckpointActive[MAX_PLAYERS];
+new Float:gCheckpointX[MAX_PLAYERS];
+new Float:gCheckpointY[MAX_PLAYERS];
+new Float:gCheckpointZ[MAX_PLAYERS];
 
 enum BusinessType
 {
@@ -246,6 +276,9 @@ enum pInfo
 	pDeliveryBiz,
 	bool:pHasDelivery,
 	pAddiction,
+	pHunger,
+	pThirst,
+	pFatigue,
 	pLastAddictionTick,
 	pDrugEffectEndTick,
 	pCarryLimit,
@@ -263,6 +296,16 @@ enum pInfo
 	pMiniStep,
 	pMiniKeySequence[MINIGAME_KEYS],
 	pMiniTimer,
+	pJobDailyCount,
+	pJobDailyDay,
+	pJobDailyMonth,
+	pJobDailyYear,
+	pActivityFlags,
+	bool:pActivityBonusClaimed,
+	pActivityDay,
+	pActivityMonth,
+	pActivityYear,
+	bool:pWarehouseWaypoint,
 	pLoginAttempts,
 	pPassHash[PASSWORD_LEN + 1]
 };
@@ -275,8 +318,13 @@ new bool:gAlprEnabled[MAX_PLAYERS];
 new gAlprTimer[MAX_PLAYERS];
 new bool:gHasLicense[MAX_PLAYERS];
 new bool:gTaxDue[MAX_PLAYERS];
+new bool:gLspdDuty[MAX_PLAYERS];
+new gVehicleOwner[MAX_VEHICLES];
+new gEconomyHeat = 0;
+new gCrimeHeat[MAX_PLAYERS];
 new gStolenPlateCount;
 new gStolenPlates[MAX_STOLEN_PLATES][MAX_PLATE_LEN];
+
 
 new gVehicleLockLevel[MAX_VEHICLES];
 new gVehicleAlarmLevel[MAX_VEHICLES];
@@ -340,6 +388,12 @@ forward TaxiRentalTick();
 forward TaxiMeterTick();
 forward PetUpdate(playerid);
 forward OnAddictionTick();
+forward NeedsTick();
+forward EconomyTick();
+forward FactionSalaryTick();
+forward CrimeTick();
+stock bool:CanAccessVehicleTrunk(playerid, vehicleid);
+stock bool:CanVehicleCarryItem(vehicleid, itemid, amount);
 
 stock bool:HasCommandPrefix(const cmd[], const prefix[])
 {
@@ -356,6 +410,14 @@ stock LogAuthEvent(playerid, const event[], const detail[] = "")
 		return 1;
 	}
 	printf("[AUTH] %s(%d) %s", name, playerid, event);
+	return 1;
+}
+
+stock LogEconomyEvent(playerid, amount, const reason[])
+{
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+	printf("[ECON] %s(%d) %d: %s", name, playerid, amount, reason);
 	return 1;
 }
 
@@ -381,7 +443,7 @@ stock bool:EnsureDatabaseSchema()
 {
 	new ok = 1;
 	ok = ok && RunSchemaQuery(
-		"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`salt` CHAR(24) NOT NULL DEFAULT '',`version` INT NOT NULL DEFAULT 1,`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`last_login` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`money` INT NOT NULL DEFAULT 0,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,`vehicle_registered` TINYINT(1) NOT NULL DEFAULT 0,`taxes_paid` TINYINT(1) NOT NULL DEFAULT 0,`insured` TINYINT(1) NOT NULL DEFAULT 0,`addiction` INT NOT NULL DEFAULT 0,`carry_limit` INT NOT NULL DEFAULT 8,`tutorial_done` TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
+		"CREATE TABLE IF NOT EXISTS `accounts` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`name` VARCHAR(24) NOT NULL,`password` CHAR(64) NOT NULL,`salt` CHAR(24) NOT NULL DEFAULT '',`version` INT NOT NULL DEFAULT 1,`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`last_login` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,`money` INT NOT NULL DEFAULT 0,`skin` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 1958.3783,`y` FLOAT NOT NULL DEFAULT 1343.1572,`z` FLOAT NOT NULL DEFAULT 15.3746,`a` FLOAT NOT NULL DEFAULT 270.0,`interior` INT NOT NULL DEFAULT 0,`world` INT NOT NULL DEFAULT 0,`vehicle_registered` TINYINT(1) NOT NULL DEFAULT 0,`taxes_paid` TINYINT(1) NOT NULL DEFAULT 0,`insured` TINYINT(1) NOT NULL DEFAULT 0,`addiction` INT NOT NULL DEFAULT 0,`hunger` INT NOT NULL DEFAULT 100,`thirst` INT NOT NULL DEFAULT 100,`fatigue` INT NOT NULL DEFAULT 0,`carry_limit` INT NOT NULL DEFAULT 50,`tutorial_done` TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY (`id`),UNIQUE KEY `name` (`name`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;",
 		"create_accounts"
 	);
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `salt` CHAR(24) NOT NULL DEFAULT ''", "add_salt");
@@ -389,14 +451,23 @@ stock bool:EnsureDatabaseSchema()
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP", "add_created_at");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `last_login` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP", "add_last_login");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `money` INT NOT NULL DEFAULT 0", "add_money");
-	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `carry_limit` INT NOT NULL DEFAULT 8", "add_carry_limit");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `carry_limit` INT NOT NULL DEFAULT 50", "add_carry_limit");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `tutorial_done` TINYINT(1) NOT NULL DEFAULT 0", "add_tutorial_done");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `vehicle_registered` TINYINT(1) NOT NULL DEFAULT 0", "add_vehicle_registered");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `taxes_paid` TINYINT(1) NOT NULL DEFAULT 0", "add_taxes_paid");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `insured` TINYINT(1) NOT NULL DEFAULT 0", "add_insured");
 	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `addiction` INT NOT NULL DEFAULT 0", "add_addiction");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `hunger` INT NOT NULL DEFAULT 100", "add_hunger");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `thirst` INT NOT NULL DEFAULT 100", "add_thirst");
+	ok = ok && RunSchemaQuery("ALTER TABLE `accounts` ADD COLUMN `fatigue` INT NOT NULL DEFAULT 0", "add_fatigue");
 
 	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `inventory` (`account_id` INT NOT NULL,`item_id` INT NOT NULL,`amount` INT NOT NULL DEFAULT 0,PRIMARY KEY (`account_id`,`item_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_inventory");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `job_progress` (`account_id` INT NOT NULL,`job_id` INT NOT NULL,`xp` INT NOT NULL DEFAULT 0,`level` INT NOT NULL DEFAULT 0,PRIMARY KEY (`account_id`,`job_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_job_progress");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `faction_members` (`account_id` INT NOT NULL,`faction_id` INT NOT NULL DEFAULT -1,`rank` INT NOT NULL DEFAULT 0,PRIMARY KEY (`account_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_faction_members");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `faction_storage` (`faction_id` INT NOT NULL,`item_id` INT NOT NULL,`amount` INT NOT NULL DEFAULT 0,PRIMARY KEY (`faction_id`,`item_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_faction_storage");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `vehicle_storage` (`plate` VARCHAR(32) NOT NULL,`item_id` INT NOT NULL,`amount` INT NOT NULL DEFAULT 0,PRIMARY KEY (`plate`,`item_id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_vehicle_storage");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `economy_ledger` (`id` INT NOT NULL AUTO_INCREMENT,`account_id` INT NOT NULL,`amount` INT NOT NULL,`reason` VARCHAR(64) NOT NULL,`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_economy_ledger");
+	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `law_records` (`id` INT NOT NULL AUTO_INCREMENT,`officer_id` INT NOT NULL,`target_id` INT NOT NULL,`event` VARCHAR(32) NOT NULL,`detail` VARCHAR(128) NOT NULL DEFAULT '',`created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_law_records");
 	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `businesses` (`id` INT NOT NULL,`owner_id` INT NOT NULL DEFAULT 0,`components` INT NOT NULL DEFAULT 0,`component_price` INT NOT NULL DEFAULT 0,`earnings` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_businesses");
 	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `properties` (`id` INT NOT NULL,`owner_id` INT NOT NULL DEFAULT 0,`locked` TINYINT(1) NOT NULL DEFAULT 0,`rentable` TINYINT(1) NOT NULL DEFAULT 0,`rent_price` INT NOT NULL DEFAULT 0,`tenant_id` INT NOT NULL DEFAULT 0,`entry_x` FLOAT NOT NULL DEFAULT 0,`entry_y` FLOAT NOT NULL DEFAULT 0,`entry_z` FLOAT NOT NULL DEFAULT 0,`entry_a` FLOAT NOT NULL DEFAULT 0,`entry_interior` INT NOT NULL DEFAULT 0,`entry_world` INT NOT NULL DEFAULT 0,`exit_x` FLOAT NOT NULL DEFAULT 0,`exit_y` FLOAT NOT NULL DEFAULT 0,`exit_z` FLOAT NOT NULL DEFAULT 0,`exit_a` FLOAT NOT NULL DEFAULT 0,`exit_interior` INT NOT NULL DEFAULT 0,`exit_world` INT NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_properties");
 	ok = ok && RunSchemaQuery("CREATE TABLE IF NOT EXISTS `vehicles` (`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,`owner_id` INT NOT NULL DEFAULT 0,`model` INT NOT NULL DEFAULT 0,`x` FLOAT NOT NULL DEFAULT 0,`y` FLOAT NOT NULL DEFAULT 0,`z` FLOAT NOT NULL DEFAULT 0,`a` FLOAT NOT NULL DEFAULT 0,`color1` INT NOT NULL DEFAULT 0,`color2` INT NOT NULL DEFAULT 0,`health` FLOAT NOT NULL DEFAULT 1000,`plate` VARCHAR(32) NOT NULL DEFAULT '',`registered` TINYINT(1) NOT NULL DEFAULT 0,`taxes_paid` TINYINT(1) NOT NULL DEFAULT 0,`insured` TINYINT(1) NOT NULL DEFAULT 0,PRIMARY KEY (`id`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;", "create_vehicles");
@@ -418,7 +489,7 @@ stock StartAccountCheck(playerid)
 
 	new query[256];
 	mysql_format(g_SQL, query, sizeof(query),
-		"SELECT `id`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`money`,`carry_limit`,`tutorial_done` FROM `accounts` WHERE `name`='%e' LIMIT 1",
+		"SELECT `id`,`password`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`hunger`,`thirst`,`fatigue`,`money`,`carry_limit`,`tutorial_done` FROM `accounts` WHERE `name`='%e' LIMIT 1",
 		name
 	);
 	mysql_tquery(g_SQL, query, "OnAccountCheck", "i", playerid);
@@ -467,26 +538,68 @@ stock Float:floatmin(Float:a, Float:b)
 	return (a < b) ? a : b;
 }
 
+stock Float:GetPlayerDistanceFromPlayer(playerid, targetid)
+{
+	new Float:px, Float:py, Float:pz;
+	new Float:tx, Float:ty, Float:tz;
+	GetPlayerPos(playerid, px, py, pz);
+	GetPlayerPos(targetid, tx, ty, tz);
+	return floatsqroot((px - tx) * (px - tx) + (py - ty) * (py - ty) + (pz - tz) * (pz - tz));
+}
+
+#define ITEM_WATER 0
+#define ITEM_SANDWICH 1
+#define ITEM_BANDAGE 2
+#define ITEM_MEDKIT 3
+#define ITEM_PHONE 4
+#define ITEM_RADIO 5
+#define ITEM_FLASHLIGHT 6
+#define ITEM_REPAIR_KIT 7
+#define ITEM_LOCKPICK 8
+#define ITEM_NOTEBOOK 9
+#define ITEM_PISTOL_AMMO 10
+#define ITEM_ROPE 11
+#define ITEM_PICKAXE 12
+#define ITEM_FISHING_ROD 13
+#define ITEM_WOOD_STACK 14
+#define ITEM_IRON_ORE 15
+#define ITEM_FISH_CRATE 16
+#define ITEM_TOOLKIT 17
+#define ITEM_FUEL_CAN 18
+#define ITEM_COPPER_WIRE 19
+#define ITEM_CRATE 20
+
 enum itemInfo
 {
 	itemLabel[MAX_ITEM_NAME],
-	bool:itemConsumable
+	bool:itemConsumable,
+	itemWeightKg,
+	bool:itemIllegalFlag
 };
 
 new const gItems[MAX_ITEMS][itemInfo] =
 {
-	{"Water Bottle", true},
-	{"Sandwich", true},
-	{"Bandage", true},
-	{"Medkit", true},
-	{"Phone", false},
-	{"Radio", false},
-	{"Flashlight", false},
-	{"Repair Kit", false},
-	{"Lockpick", false},
-	{"Notebook", false},
-	{"Pistol Ammo", false},
-	{"Rope", false}
+	{"Wasserflasche", true, 1, false},
+	{"Sandwich", true, 1, false},
+	{"Verband", true, 1, false},
+	{"Medikit", true, 2, false},
+	{"Handy", false, 1, false},
+	{"Radio", false, 1, false},
+	{"Taschenlampe", false, 1, false},
+	{"Reparaturset", false, 3, false},
+	{"Dietrich", false, 1, true},
+	{"Notizbuch", false, 1, false},
+	{"Pistolenmunition", false, 1, true},
+	{"Seil", false, 2, false},
+	{"Spitzhacke", false, 4, false},
+	{"Angel", false, 2, false},
+	{"Holzstapel", false, 5, false},
+	{"Eisenerz", false, 4, false},
+	{"Fischkiste", false, 3, false},
+	{"Werkzeugkoffer", false, 3, false},
+	{"Kraftstoffkanister", false, 4, false},
+	{"Kupferkabel", false, 2, true},
+	{"Kiste", false, 1, false}
 };
 
 new PlayerItems[MAX_PLAYERS][MAX_ITEMS];
@@ -528,14 +641,191 @@ stock GetItemName(itemid, name[], size = MAX_ITEM_NAME)
 	return 1;
 }
 
+stock GetItemWeight(itemid)
+{
+	if (itemid < 0 || itemid >= MAX_ITEMS)
+	{
+		return 0;
+	}
+	return gItems[itemid][itemWeightKg];
+}
+
+stock bool:IsItemIllegal(itemid)
+{
+	if (itemid < 0 || itemid >= MAX_ITEMS)
+	{
+		return false;
+	}
+	return gItems[itemid][itemIllegalFlag];
+}
+
+stock GetIllegalItemValue(itemid)
+{
+	switch (itemid)
+	{
+		case 8: return 120; // Dietrich
+		case 10: return 80; // Pistolenmunition
+		case 19: return 200; // Kupferkabel
+	}
+	return 0;
+}
+
+stock GetPlayerInventoryWeight(playerid)
+{
+	new weight = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1)
+		{
+			continue;
+		}
+		weight += gItems[i][itemWeightKg] * PlayerItems[playerid][i];
+	}
+	return weight;
+}
+
+stock bool:CanPlayerCarryItem(playerid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return false;
+	}
+	new weightKg = gItems[itemid][itemWeightKg];
+	if (weightKg < 1)
+	{
+		return false;
+	}
+	new total = GetPlayerInventoryWeight(playerid) + (weightKg * amount);
+	return total <= PlayerData[playerid][pCarryLimit];
+}
+
+stock ShowInventoryFullMessage(playerid, itemid, amount)
+{
+	new currentWeight = GetPlayerInventoryWeight(playerid);
+	new maxWeight = PlayerData[playerid][pCarryLimit];
+	new needed = GetItemWeight(itemid) * amount;
+	new message[96];
+	format(message, sizeof(message), "Inventar voll (%d/%dkg). Bedarf: %dkg.", currentWeight, maxWeight, needed);
+	SendClientMessage(playerid, -1, message);
+	return 1;
+}
+
 stock IsValidItem(itemid)
 {
 	return (itemid >= 0 && itemid < MAX_ITEMS);
 }
 
+stock Activity_ResetIfNeeded(playerid)
+{
+	new year, month, day;
+	getdate(year, month, day);
+	if (PlayerData[playerid][pActivityDay] != day || PlayerData[playerid][pActivityMonth] != month || PlayerData[playerid][pActivityYear] != year)
+	{
+		PlayerData[playerid][pActivityDay] = day;
+		PlayerData[playerid][pActivityMonth] = month;
+		PlayerData[playerid][pActivityYear] = year;
+		PlayerData[playerid][pActivityFlags] = 0;
+		PlayerData[playerid][pActivityBonusClaimed] = false;
+	}
+	return 1;
+}
+
+stock Activity_CountFlags(flags)
+{
+	new count = 0;
+	for (new i = 0; i < 8; i++)
+	{
+		if (flags & (1 << i))
+		{
+			count++;
+		}
+	}
+	return count;
+}
+
+stock bool:Activity_Mark(playerid, flag)
+{
+	if (!PlayerData[playerid][pLogged])
+	{
+		return false;
+	}
+	Activity_ResetIfNeeded(playerid);
+	new bool:hadFlag = (PlayerData[playerid][pActivityFlags] & flag) != 0;
+	PlayerData[playerid][pActivityFlags] |= flag;
+	if (!PlayerData[playerid][pActivityBonusClaimed] && Activity_CountFlags(PlayerData[playerid][pActivityFlags]) >= 3)
+	{
+		PlayerData[playerid][pActivityBonusClaimed] = true;
+		Economy_Payout(playerid, ACTIVITY_BONUS_AMOUNT, "activity_bonus");
+		SendClientMessage(playerid, -1, "Vielfalt-Bonus: $500. Naechster Schritt: /gps fuer neue Jobs.");
+	}
+	return !hadFlag;
+}
+
+stock SetPlayerCheckpointEx(playerid, Float:x, Float:y, Float:z, Float:size)
+{
+	SetPlayerCheckpoint(playerid, x, y, z, size);
+	gCheckpointActive[playerid] = true;
+	gCheckpointX[playerid] = x;
+	gCheckpointY[playerid] = y;
+	gCheckpointZ[playerid] = z;
+	return 1;
+}
+
+stock ClearPlayerCheckpointEx(playerid)
+{
+	if (gCheckpointActive[playerid])
+	{
+		DisablePlayerCheckpoint(playerid);
+	}
+	gCheckpointActive[playerid] = false;
+	return 1;
+}
+
+stock bool:CanStoreSellItem(itemid)
+{
+	return (IsValidItem(itemid) && gStorePrices[itemid] > 0);
+}
+
+stock bool:BuyStoreItem(playerid, itemid, count)
+{
+	if (!CanStoreSellItem(itemid) || count < 1)
+	{
+		SendClientMessage(playerid, -1, "Dieser Artikel ist hier nicht verfuegbar.");
+		return false;
+	}
+	new cost = gStorePrices[itemid] * count;
+	if (GetPlayerMoney(playerid) < cost)
+	{
+		SendClientMessage(playerid, -1, "Du hast nicht genug Geld.");
+		return false;
+	}
+	if (!CanPlayerCarryItem(playerid, itemid, count))
+	{
+		ShowInventoryFullMessage(playerid, itemid, count);
+		return false;
+	}
+	GivePlayerMoneyLogged(playerid, -cost, "store_buy");
+	AddPlayerItem(playerid, itemid, count);
+	new itemName[MAX_ITEM_NAME];
+	GetItemName(itemid, itemName, sizeof(itemName));
+	new msg[96];
+	format(msg, sizeof(msg), "Gekauft: %s x%d fuer $%d.", itemName, count, cost);
+	SendClientMessage(playerid, -1, msg);
+	return true;
+}
+
+stock bool:IsPlayerNearFishingVendor(playerid)
+{
+	return bool:(IsPlayerInRangeOfPoint(playerid, 3.0, FISH_VENDOR_X, FISH_VENDOR_Y, FISH_VENDOR_Z));
+}
+
 stock AddPlayerItem(playerid, itemid, amount)
 {
 	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	if (!CanPlayerCarryItem(playerid, itemid, amount))
 	{
 		return 0;
 	}
@@ -560,6 +850,10 @@ stock RemovePlayerItem(playerid, itemid, amount)
 stock AddVehicleItem(vehicleid, itemid, amount)
 {
 	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return 0;
+	}
+	if (!CanVehicleCarryItem(vehicleid, itemid, amount))
 	{
 		return 0;
 	}
@@ -715,12 +1009,13 @@ stock SendInventoryList(playerid, targetid, const title[])
 		}
 		hasItems = true;
 		GetItemName(i, itemName, sizeof(itemName));
-		format(message, sizeof(message), "  [%d] %s x%d", i, itemName, PlayerItems[playerid][i]);
+		format(message, sizeof(message), "  [%d] %s x%d (%dkg)", i, itemName, PlayerItems[playerid][i],
+			gItems[i][itemWeightKg] * PlayerItems[playerid][i]);
 		SendClientMessage(targetid, -1, message);
 	}
 	if (!hasItems)
 	{
-		SendClientMessage(targetid, -1, "  (no items)");
+		SendClientMessage(targetid, -1, "  (keine Gegenstaende)");
 	}
 	return 1;
 }
@@ -741,12 +1036,13 @@ stock SendVehicleInventoryList(playerid, vehicleid, const title[])
 		}
 		hasItems = true;
 		GetItemName(i, itemName, sizeof(itemName));
-		format(message, sizeof(message), "  [%d] %s x%d", i, itemName, VehicleItems[vehicleid][i]);
+		format(message, sizeof(message), "  [%d] %s x%d (%dkg)", i, itemName, VehicleItems[vehicleid][i],
+			gItems[i][itemWeightKg] * VehicleItems[vehicleid][i]);
 		SendClientMessage(playerid, -1, message);
 	}
 	if (!hasItems)
 	{
-		SendClientMessage(playerid, -1, "  (empty)");
+		SendClientMessage(playerid, -1, "  (leer)");
 	}
 	return 1;
 }
@@ -793,6 +1089,8 @@ stock ShowInventoryDialog(playerid)
 	list[0] = EOS;
 	new itemName[MAX_ITEM_NAME];
 	new hasItems = 0;
+	new weight = GetPlayerInventoryWeight(playerid);
+	new maxWeight = PlayerData[playerid][pCarryLimit];
 	for (new i = 0; i < MAX_ITEMS; i++)
 	{
 		if (PlayerItems[playerid][i] < 1)
@@ -802,14 +1100,17 @@ stock ShowInventoryDialog(playerid)
 		hasItems = 1;
 		GetItemName(i, itemName, sizeof(itemName));
 		new line[64];
-		format(line, sizeof(line), "%s x%d\n", itemName, PlayerItems[playerid][i]);
+		format(line, sizeof(line), "%s x%d (%dkg)\n", itemName, PlayerItems[playerid][i],
+			gItems[i][itemWeightKg] * PlayerItems[playerid][i]);
 		strcat(list, line);
 	}
 	if (!hasItems)
 	{
-		strcat(list, "(no items)\n");
+		strcat(list, "(keine Gegenstaende)\n");
 	}
-	ShowPlayerDialog(playerid, DIALOG_INVENTORY, DIALOG_STYLE_LIST, "Inventory", list, "Select", "Close");
+	new title[64];
+	format(title, sizeof(title), "Inventar (%d/%dkg)", weight, maxWeight);
+	ShowPlayerDialog(playerid, DIALOG_INVENTORY, DIALOG_STYLE_LIST, title, list, "Waehlen", "Schliessen");
 	return 1;
 }
 
@@ -828,14 +1129,87 @@ stock ShowVehicleItemsDialog(playerid, vehicleid)
 		hasItems = 1;
 		GetItemName(i, itemName, sizeof(itemName));
 		new line[64];
-		format(line, sizeof(line), "%s x%d\n", itemName, VehicleItems[vehicleid][i]);
+		format(line, sizeof(line), "%s x%d (%dkg)\n", itemName, VehicleItems[vehicleid][i],
+			gItems[i][itemWeightKg] * VehicleItems[vehicleid][i]);
 		strcat(list, line);
 	}
 	if (!hasItems)
 	{
-		strcat(list, "(empty)\n");
+		strcat(list, "(leer)\n");
 	}
-	ShowPlayerDialog(playerid, DIALOG_VEHICLE_ITEMS, DIALOG_STYLE_LIST, "Vehicle Inventory", list, "Take", "Close");
+	ShowPlayerDialog(playerid, DIALOG_VEHICLE_ITEMS, DIALOG_STYLE_LIST, "Kofferraum", list, "Nehmen", "Schliessen");
+	return 1;
+}
+
+stock Law_BuildIllegalListPlayer(playerid, list[], size)
+{
+	new count = 0;
+	list[0] = '\0';
+	new itemName[MAX_ITEM_NAME];
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] < 1 || !IsItemIllegal(i))
+		{
+			continue;
+		}
+		GetItemName(i, itemName, sizeof(itemName));
+		new line[64];
+		format(line, sizeof(line), "%s x%d\n", itemName, PlayerItems[playerid][i]);
+		strcat(list, line, size);
+		count++;
+	}
+	return count;
+}
+
+stock Law_BuildIllegalListVehicle(vehicleid, list[], size)
+{
+	new count = 0;
+	list[0] = '\0';
+	new itemName[MAX_ITEM_NAME];
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1 || !IsItemIllegal(i))
+		{
+			continue;
+		}
+		GetItemName(i, itemName, sizeof(itemName));
+		new line[64];
+		format(line, sizeof(line), "%s x%d\n", itemName, VehicleItems[vehicleid][i]);
+		strcat(list, line, size);
+		count++;
+	}
+	return count;
+}
+
+stock LogLawEvent(const event[], playerid, targetid, const detail[] = "")
+{
+	new name[MAX_PLAYER_NAME];
+	new target[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, sizeof(name));
+	if (IsPlayerConnected(targetid))
+	{
+		GetPlayerName(targetid, target, sizeof(target));
+	}
+	else
+	{
+		format(target, sizeof(target), "id=%d", targetid);
+	}
+	if (detail[0] != '\0')
+	{
+		printf("[LAW] %s by %s on %s: %s", event, name, target, detail);
+		Law_LogRecord(playerid, targetid, event, detail);
+		if (!strcmp(event, "search_hit", true) || !strcmp(event, "searchveh_hit", true))
+		{
+			gEconomyHeat += 1;
+			if (targetid >= 0 && targetid < MAX_PLAYERS)
+			{
+				gCrimeHeat[targetid] += 1;
+			}
+		}
+		return 1;
+	}
+	printf("[LAW] %s by %s on %s", event, name, target);
+	Law_LogRecord(playerid, targetid, event, "");
 	return 1;
 }
 
@@ -927,7 +1301,7 @@ stock ClearDeliveryCheckpoint(playerid)
 {
 	if (PlayerData[playerid][pHasDelivery])
 	{
-		DisablePlayerCheckpoint(playerid);
+		ClearPlayerCheckpointEx(playerid);
 		PlayerData[playerid][pHasDelivery] = false;
 		PlayerData[playerid][pDeliveryBiz] = -1;
 	}
@@ -947,30 +1321,37 @@ stock DeliverComponents(playerid, businessId)
 		return 1;
 	}
 
-	if (PlayerData[playerid][pCrates] < 1)
+	new crateCount = PlayerItems[playerid][ITEM_CRATE];
+	if (crateCount < 1)
 	{
 		SendClientMessage(playerid, -1, "You have no crates to deliver.");
 		return 1;
 	}
 
-	if (GetPlayerDistanceFromPoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ]) > BUSINESS_BUY_RADIUS)
+	if (!PlayerData[playerid][pHasDelivery] &&
+		GetPlayerDistanceFromPoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ]) > BUSINESS_BUY_RADIUS)
 	{
 		SendClientMessage(playerid, -1, "You must be at the business to deliver.");
 		return 1;
 	}
 
-	new payout = PlayerData[playerid][pCrates] * BusinessData[businessId][bComponentPrice];
-	BusinessData[businessId][bComponents] += PlayerData[playerid][pCrates];
-	PlayerData[playerid][pCrates] = 0;
+	new delivered = crateCount;
+	new payout = delivered * BusinessData[businessId][bComponentPrice];
+	BusinessData[businessId][bComponents] += delivered;
+	RemovePlayerItem(playerid, ITEM_CRATE, delivered);
 
 	if (payout > 0)
 	{
 		GivePlayerMoney(playerid, payout);
 	}
 
-	SendClientMessage(playerid, -1, "Components delivered. Your crates have been unloaded.");
+	new message[128];
+	format(message, sizeof(message), "Lieferung abgeschlossen: %d Kisten, $%d verdient. Lagerbestand: %d.",
+		delivered, payout, BusinessData[businessId][bComponents]);
+	SendClientMessage(playerid, -1, message);
 	ShowBusinessStatus(playerid, businessId);
 	UpdateBusinessLabel(businessId);
+	Activity_Mark(playerid, ACTIVITY_DELIVERY);
 	return 1;
 }
 
@@ -1057,9 +1438,12 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pDeliveryBiz] = -1;
 	PlayerData[playerid][pHasDelivery] = false;
 	PlayerData[playerid][pAddiction] = 0;
+	PlayerData[playerid][pHunger] = 100;
+	PlayerData[playerid][pThirst] = 100;
+	PlayerData[playerid][pFatigue] = 0;
 	PlayerData[playerid][pLastAddictionTick] = GetTickCount();
 	PlayerData[playerid][pDrugEffectEndTick] = 0;
-	PlayerData[playerid][pCarryLimit] = 8;
+	PlayerData[playerid][pCarryLimit] = BASE_CARRY_LIMIT_KG;
 	PlayerData[playerid][pVehicleRegistered] = false;
 	PlayerData[playerid][pTaxesPaid] = false;
 	PlayerData[playerid][pInsured] = false;
@@ -1073,6 +1457,16 @@ stock ResetPlayerData(playerid)
 	PlayerData[playerid][pMiniVehicle] = INVALID_VEHICLE_ID;
 	PlayerData[playerid][pMiniStep] = 0;
 	PlayerData[playerid][pMiniTimer] = 0;
+	PlayerData[playerid][pJobDailyCount] = 0;
+	PlayerData[playerid][pJobDailyDay] = 0;
+	PlayerData[playerid][pJobDailyMonth] = 0;
+	PlayerData[playerid][pJobDailyYear] = 0;
+	PlayerData[playerid][pActivityFlags] = 0;
+	PlayerData[playerid][pActivityBonusClaimed] = false;
+	PlayerData[playerid][pActivityDay] = 0;
+	PlayerData[playerid][pActivityMonth] = 0;
+	PlayerData[playerid][pActivityYear] = 0;
+	PlayerData[playerid][pWarehouseWaypoint] = false;
 	for (new i = 0; i < MINIGAME_KEYS; i++)
 	{
 		PlayerData[playerid][pMiniKeySequence][i] = 0;
@@ -1086,11 +1480,16 @@ stock ResetPlayerData(playerid)
 	gAlprEnabled[playerid] = false;
 	gHasLicense[playerid] = true;
 	gTaxDue[playerid] = false;
+	gLspdDuty[playerid] = false;
+	gCrimeHeat[playerid] = 0;
+	Faction_ResetPlayer(playerid);
+	Map_ResetPlayer(playerid);
 	if (gAlprTimer[playerid] != 0)
 	{
 		KillTimer(gAlprTimer[playerid]);
 		gAlprTimer[playerid] = 0;
 	}
+	Job_ResetPlayer(playerid);
 	gCinemaWatching[playerid] = false;
 	gTaxiOnDuty[playerid] = false;
 	gTaxiRequesting[playerid] = false;
@@ -1413,15 +1812,15 @@ stock UseCocaine(playerid)
 stock UseHeroin(playerid)
 {
 	new Float:multiplier = GetAddictionMultiplier(playerid);
-	new Float:carryBonus = floatround(2.0 * multiplier, floatround_floor);
+	new Float:carryBonus = floatround(5.0 * multiplier, floatround_floor);
 	if (carryBonus < 1)
 	{
 		carryBonus = 1;
 	}
 	PlayerData[playerid][pCarryLimit] += carryBonus;
-	if (PlayerData[playerid][pCarryLimit] > 10)
+	if (PlayerData[playerid][pCarryLimit] > MAX_CARRY_LIMIT_KG)
 	{
-		PlayerData[playerid][pCarryLimit] = 10;
+		PlayerData[playerid][pCarryLimit] = MAX_CARRY_LIMIT_KG;
 	}
 	ApplyScreenEffect(playerid, true);
 	IncreaseAddiction(playerid, false);
@@ -1434,6 +1833,145 @@ stock UseMethadone(playerid)
 	if (PlayerData[playerid][pAddiction] < 0)
 	{
 		PlayerData[playerid][pAddiction] = 0;
+	}
+	return 1;
+}
+
+stock ApplyNeedClamp(playerid)
+{
+	if (PlayerData[playerid][pHunger] < 0) PlayerData[playerid][pHunger] = 0;
+	if (PlayerData[playerid][pThirst] < 0) PlayerData[playerid][pThirst] = 0;
+	if (PlayerData[playerid][pFatigue] < 0) PlayerData[playerid][pFatigue] = 0;
+	if (PlayerData[playerid][pHunger] > NEED_MAX) PlayerData[playerid][pHunger] = NEED_MAX;
+	if (PlayerData[playerid][pThirst] > NEED_MAX) PlayerData[playerid][pThirst] = NEED_MAX;
+	if (PlayerData[playerid][pFatigue] > NEED_MAX) PlayerData[playerid][pFatigue] = NEED_MAX;
+	return 1;
+}
+
+stock ApplyNeedDecay(playerid)
+{
+	if (!PlayerData[playerid][pLogged])
+	{
+		return 0;
+	}
+	PlayerData[playerid][pHunger] -= 2;
+	PlayerData[playerid][pThirst] -= 3;
+	PlayerData[playerid][pFatigue] += 2;
+	ApplyNeedClamp(playerid);
+
+	if (PlayerData[playerid][pHunger] <= 0 || PlayerData[playerid][pThirst] <= 0)
+	{
+		new Float:health;
+		GetPlayerHealth(playerid, health);
+		SetPlayerHealth(playerid, floatmin(200.0, health - 2.0));
+	}
+
+	if (PlayerData[playerid][pHunger] <= NEED_WARN || PlayerData[playerid][pThirst] <= NEED_WARN)
+	{
+		SendClientMessage(playerid, -1, "Du fuehlst dich schwaecher. Iss und trink etwas.");
+	}
+	return 1;
+}
+
+stock UseInventoryItem(playerid, itemid)
+{
+	if (!IsValidItem(itemid))
+	{
+		return 0;
+	}
+
+	switch (itemid)
+	{
+		case 0: // Wasserflasche
+		{
+			PlayerData[playerid][pThirst] += 25;
+		}
+		case 1: // Sandwich
+		{
+			PlayerData[playerid][pHunger] += 25;
+		}
+		case 2: // Verband
+		{
+			new Float:health;
+			GetPlayerHealth(playerid, health);
+			SetPlayerHealth(playerid, floatmin(200.0, health + 10.0));
+		}
+		case 3: // Medikit
+		{
+			new Float:health;
+			GetPlayerHealth(playerid, health);
+			SetPlayerHealth(playerid, floatmin(200.0, health + 35.0));
+		}
+		default:
+		{
+			return 0;
+		}
+	}
+	ApplyNeedClamp(playerid);
+	return 1;
+}
+
+public NeedsTick()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (IsPlayerConnected(i) && PlayerData[i][pLogged])
+		{
+			ApplyNeedDecay(i);
+		}
+	}
+	return 1;
+}
+
+stock bool:HasIllegalItemsPlayer(playerid)
+{
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (PlayerItems[playerid][i] > 0 && IsItemIllegal(i))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+public CrimeTick()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (!IsPlayerConnected(i) || !PlayerData[i][pLogged])
+		{
+			continue;
+		}
+		if (HasIllegalItemsPlayer(i))
+		{
+			gCrimeHeat[i] += 1;
+		}
+		else if (gCrimeHeat[i] > 0)
+		{
+			gCrimeHeat[i] -= 1;
+		}
+	}
+	if (gEconomyHeat > 0)
+	{
+		gEconomyHeat -= 1;
+	}
+	return 1;
+}
+
+public EconomyTick()
+{
+	for (new i = 0; i < MAX_BUSINESSES; i++)
+	{
+		new stockCount = BusinessData[i][bComponents];
+		new base = 650;
+		if (stockCount < 20) base += 200;
+		if (stockCount > 80) base -= 100;
+		base += (gEconomyHeat * 10);
+		if (base < 300) base = 300;
+		if (base > 1200) base = 1200;
+		BusinessData[i][bComponentPrice] = base;
+		UpdateBusinessLabel(i);
 	}
 	return 1;
 }
@@ -1683,7 +2221,7 @@ stock TaxiResetRequestForCustomer(customerid)
 	if (driverid != INVALID_PLAYER_ID)
 	{
 		TaxiCustomerForDriver[driverid] = INVALID_PLAYER_ID;
-		DisablePlayerCheckpoint(driverid);
+		ClearPlayerCheckpointEx(driverid);
 	}
 	gTaxiRequesting[customerid] = false;
 	TaxiDriverForCustomer[customerid] = INVALID_PLAYER_ID;
@@ -1699,7 +2237,7 @@ stock TaxiResetRequestForDriver(driverid)
 		gTaxiRequesting[customerid] = false;
 	}
 	TaxiCustomerForDriver[driverid] = INVALID_PLAYER_ID;
-	DisablePlayerCheckpoint(driverid);
+	ClearPlayerCheckpointEx(driverid);
 	return 1;
 }
 
@@ -1861,11 +2399,11 @@ stock ShowGarageHelp(playerid)
 	strcat(message, "Press K - Enter/exit an unlocked garage while on foot or in a vehicle.\n");
 	strcat(message, "/plock - Lock or unlock a garage (tenants only).\n");
 	strcat(message, "/pentrance - Change the inside entrance to your position.\n");
-	strcat(message, "/pinv - Check the inventory (tenants only).\n");
+	strcat(message, "/pinv - Inventar pruefen (nur Mieter).\n");
 	strcat(message, "/ptitem(s) - Remove items; add S for as many as possible.\n");
 	strcat(message, "/ppitem(s) - Place items; add S for as many as possible.\n");
 	strcat(message, "/outfit - Open saved outfit menu (tenants only).\n");
-	strcat(message, "/pmenu - Info menu, inventory, and construction permissions.\n");
+	strcat(message, "/pmenu - Info, Inventar, Bau-Rechte.\n");
 	strcat(message, "/pinfo - Show garage info (owner only).\n");
 	strcat(message, "/setrentable - Make garage rentable; blank to stop.\n");
 	strcat(message, "/rent - Rent a garage.\n");
@@ -1887,7 +2425,13 @@ stock ShowHelpDialog(playerid)
 	message[0] = EOS;
 	strcat(message, "Quick commands:\n");
 	strcat(message, "/login /register\n");
-	strcat(message, "/inv - inventory\n");
+	strcat(message, "/inv - inventar\n");
+	strcat(message, "/arbeit - job info am punkt\n");
+	strcat(message, "/status - uebersicht\n");
+	strcat(message, "/stats - beduerfnisse\n");
+	strcat(message, "/phone - handy\n");
+	strcat(message, "/map - map filter\n");
+	strcat(message, "/gps - route zu POI\n");
 	strcat(message, "/taxirent - rent a taxi\n");
 	strcat(message, "/taxistart /fare /taximeter /taxidone\n");
 	strcat(message, "/buycrates /deliverbiz - delivery work\n");
@@ -2001,6 +2545,12 @@ stock bool:EnsureVehicleAccess(playerid)
 		SendClientMessage(playerid, -1, "You need to be in a vehicle.");
 		return false;
 	}
+	new vehicleid = GetPlayerVehicleID(playerid);
+	if (vehicleid != 0 && !CanAccessVehicleTrunk(playerid, vehicleid))
+	{
+		SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
+		return false;
+	}
 	return true;
 }
 
@@ -2029,6 +2579,261 @@ stock ToggleVehicleLock(vehicleid, bool:locked)
 	new engine, lights, alarm, doors, bonnet, boot, objective;
 	GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
 	SetVehicleParamsEx(vehicleid, engine, lights, alarm, locked, bonnet, boot, objective);
+	return 1;
+}
+
+stock bool:IsVehicleLocked(vehicleid)
+{
+	new engine, lights, alarm, doors, bonnet, boot, objective;
+	GetVehicleParamsEx(vehicleid, engine, lights, alarm, doors, bonnet, boot, objective);
+	return (doors != 0);
+}
+
+stock bool:HasVehicleKey(playerid, vehicleid)
+{
+	return (gVehicleOwner[vehicleid] == playerid);
+}
+
+stock bool:CanAccessVehicleTrunk(playerid, vehicleid)
+{
+	if (vehicleid == INVALID_VEHICLE_ID)
+	{
+		return false;
+	}
+	if (!IsVehicleLocked(vehicleid))
+	{
+		return true;
+	}
+	return HasVehicleKey(playerid, vehicleid);
+}
+
+stock GetVehicleTrunkCapacity(vehicleid)
+{
+	new model = GetVehicleModel(vehicleid);
+	switch (model)
+	{
+		case 414, 422, 440, 456, 498, 609: return 200; // vans/trucks
+		case 403, 514, 515: return 300; // big rigs
+	}
+	return VEHICLE_TRUNK_CAPACITY_KG;
+}
+
+stock GetVehicleInventoryWeight(vehicleid)
+{
+	new weight = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1)
+		{
+			continue;
+		}
+		weight += gItems[i][itemWeightKg] * VehicleItems[vehicleid][i];
+	}
+	return weight;
+}
+
+stock bool:CanVehicleCarryItem(vehicleid, itemid, amount)
+{
+	if (!IsValidItem(itemid) || amount < 1)
+	{
+		return false;
+	}
+	new weightKg = gItems[itemid][itemWeightKg];
+	if (weightKg < 1)
+	{
+		return false;
+	}
+	new total = GetVehicleInventoryWeight(vehicleid) + (weightKg * amount);
+	return total <= GetVehicleTrunkCapacity(vehicleid);
+}
+
+stock SaveVehicleStorage(vehicleid)
+{
+	if (!gDatabaseReady || g_SQL == MYSQL_INVALID_HANDLE)
+	{
+		return 0;
+	}
+	new plate[MAX_PLATE_LEN];
+	GetVehicleNumberPlate(vehicleid, plate, sizeof(plate));
+	if (plate[0] == '\0')
+	{
+		return 0;
+	}
+	new query[512];
+	new len = format(query, sizeof(query), "DELETE FROM `vehicle_storage` WHERE `plate`='%e';", plate);
+	mysql_tquery(g_SQL, query);
+	len = format(query, sizeof(query), "INSERT INTO `vehicle_storage` (`plate`,`item_id`,`amount`) VALUES ");
+	new added = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		if (VehicleItems[vehicleid][i] < 1)
+		{
+			continue;
+		}
+		len += format(query[len], sizeof(query) - len, "%s('%e',%d,%d)",
+			added == 0 ? "" : ",", plate, i, VehicleItems[vehicleid][i]
+		);
+		added = 1;
+	}
+	if (added)
+	{
+		mysql_tquery(g_SQL, query);
+	}
+	return 1;
+}
+
+stock LoadVehicleStorage(vehicleid)
+{
+	if (!gDatabaseReady || g_SQL == MYSQL_INVALID_HANDLE)
+	{
+		return 0;
+	}
+	new plate[MAX_PLATE_LEN];
+	GetVehicleNumberPlate(vehicleid, plate, sizeof(plate));
+	if (plate[0] == '\0')
+	{
+		return 0;
+	}
+	new query[160];
+	mysql_format(g_SQL, query, sizeof(query),
+		"SELECT `item_id`,`amount` FROM `vehicle_storage` WHERE `plate`='%e'",
+		plate
+	);
+	mysql_tquery(g_SQL, query, "OnVehicleStorageLoad", "i", vehicleid);
+	return 1;
+}
+
+forward OnVehicleStorageLoad(vehicleid);
+public OnVehicleStorageLoad(vehicleid)
+{
+	new rows;
+	cache_get_row_count(rows);
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		VehicleItems[vehicleid][i] = 0;
+	}
+	for (new row = 0; row < rows; row++)
+	{
+		new itemid;
+		new amount;
+		cache_get_value_name_int(row, "item_id", itemid);
+		cache_get_value_name_int(row, "amount", amount);
+		if (itemid >= 0 && itemid < MAX_ITEMS && amount > 0)
+		{
+			VehicleItems[vehicleid][itemid] = amount;
+		}
+	}
+	return 1;
+}
+
+stock Economy_Log(playerid, amount, const reason[])
+{
+	if (!gDatabaseReady || g_SQL == MYSQL_INVALID_HANDLE || PlayerData[playerid][pAccountId] == INVALID_ACCOUNT_ID)
+	{
+		return 0;
+	}
+	new query[256];
+	mysql_format(g_SQL, query, sizeof(query),
+		"INSERT INTO `economy_ledger` (`account_id`,`amount`,`reason`) VALUES (%d,%d,'%e')",
+		PlayerData[playerid][pAccountId], amount, reason
+	);
+	mysql_tquery(g_SQL, query);
+	return 1;
+}
+
+stock GivePlayerMoneyLogged(playerid, amount, const reason[])
+{
+	GivePlayerMoney(playerid, amount);
+	Economy_Log(playerid, amount, reason);
+	return 1;
+}
+
+stock Economy_Payout(playerid, amount, const reason[])
+{
+	new tax = floatround(float(amount) * ECON_INCOME_TAX_RATE, floatround_floor);
+	new payout = amount - tax;
+	if (tax > 0)
+	{
+		Economy_Log(playerid, -tax, "income_tax");
+	}
+	GivePlayerMoneyLogged(playerid, payout, reason);
+	return payout;
+}
+
+stock Law_LogRecord(officerid, targetid, const event[], const detail[])
+{
+	if (!gDatabaseReady || g_SQL == MYSQL_INVALID_HANDLE)
+	{
+		return 0;
+	}
+	new query[256];
+	mysql_format(g_SQL, query, sizeof(query),
+		"INSERT INTO `law_records` (`officer_id`,`target_id`,`event`,`detail`) VALUES (%d,%d,'%e','%e')",
+		officerid, targetid, event, detail
+	);
+	mysql_tquery(g_SQL, query);
+	return 1;
+}
+
+#include "include/rp_jobs.inc"
+#include "include/rp_factions.inc"
+#include "include/rp_map.inc"
+
+stock ShowStatusDialog(playerid)
+{
+	Activity_ResetIfNeeded(playerid);
+	new money = GetPlayerMoney(playerid);
+	new bestJob = 0;
+	for (new i = 1; i < MAX_JOBS; i++)
+	{
+		if (gJobLevel[playerid][i] > gJobLevel[playerid][bestJob])
+		{
+			bestJob = i;
+		}
+	}
+	new jobLevel = gJobLevel[playerid][bestJob];
+	new factionName[32] = "Keine";
+	new factionRank = 0;
+	if (gFactionId[playerid] >= 0 && gFactionId[playerid] < MAX_FACTIONS)
+	{
+		format(factionName, sizeof(factionName), "%s", gFactions[gFactionId[playerid]][fName]);
+		factionRank = gFactionRank[playerid];
+	}
+	new regStatus[16];
+	new taxStatus[16];
+	new insStatus[16];
+	format(regStatus, sizeof(regStatus), "%s", PlayerData[playerid][pVehicleRegistered] ? "Ja" : "Nein");
+	format(taxStatus, sizeof(taxStatus), "%s", PlayerData[playerid][pTaxesPaid] ? "Ja" : "Nein");
+	format(insStatus, sizeof(insStatus), "%s", PlayerData[playerid][pInsured] ? "Ja" : "Nein");
+	new activityCount = Activity_CountFlags(PlayerData[playerid][pActivityFlags]);
+	new jobFlag[4];
+	new taxiFlag[4];
+	new deliveryFlag[4];
+	new dmvFlag[4];
+	format(jobFlag, sizeof(jobFlag), "%s", (PlayerData[playerid][pActivityFlags] & ACTIVITY_JOB) ? "Ja" : "Nein");
+	format(taxiFlag, sizeof(taxiFlag), "%s", (PlayerData[playerid][pActivityFlags] & ACTIVITY_TAXI) ? "Ja" : "Nein");
+	format(deliveryFlag, sizeof(deliveryFlag), "%s", (PlayerData[playerid][pActivityFlags] & ACTIVITY_DELIVERY) ? "Ja" : "Nein");
+	format(dmvFlag, sizeof(dmvFlag), "%s", (PlayerData[playerid][pActivityFlags] & ACTIVITY_DMV) ? "Ja" : "Nein");
+	new message[256];
+	format(message, sizeof(message),
+		"Geld: $%d\nJob: %s L%d\nFraktion: %s (Rang %d)\nDMV: Registriert %s | Steuer %s | Versichert %s\nInventar: %d/%dkg\nVielfalt: %d/3\nAktivitaeten: Job %s | Taxi %s | Lieferung %s | DMV %s\nNaechster Schritt: /gps",
+		money,
+		gJobs[bestJob][jobName],
+		jobLevel,
+		factionName,
+		factionRank,
+		regStatus,
+		taxStatus,
+		insStatus,
+		GetPlayerInventoryWeight(playerid),
+		PlayerData[playerid][pCarryLimit],
+		activityCount,
+		jobFlag,
+		taxiFlag,
+		deliveryFlag,
+		dmvFlag
+	);
+	ShowPlayerDialog(playerid, DIALOG_STATUS, DIALOG_STYLE_MSGBOX, "Status", message, "OK", "");
 	return 1;
 }
 
@@ -2282,9 +3087,9 @@ stock RegisterPlayer(playerid)
 	new name[MAX_PLAYER_NAME];
 	GetPlayerName(playerid, name, sizeof(name));
 
-	new query[256];
+	new query[512];
 	mysql_format(g_SQL, query, sizeof(query),
-		"INSERT INTO `accounts` (`name`,`password`,`version`,`created_at`,`last_login`,`money`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`carry_limit`,`tutorial_done`) VALUES ('%e','%e',%d,NOW(),NOW(),%d,%d,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d)",
+		"INSERT INTO `accounts` (`name`,`password`,`version`,`created_at`,`last_login`,`money`,`skin`,`x`,`y`,`z`,`a`,`interior`,`world`,`vehicle_registered`,`taxes_paid`,`insured`,`addiction`,`hunger`,`thirst`,`fatigue`,`carry_limit`,`tutorial_done`) VALUES ('%e','%e',%d,NOW(),NOW(),%d,%d,%.4f,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d)",
 		name,
 		PlayerData[playerid][pPassHash],
 		ACCOUNT_VERSION,
@@ -2296,6 +3101,9 @@ stock RegisterPlayer(playerid)
 		PlayerData[playerid][pTaxesPaid],
 		PlayerData[playerid][pInsured],
 		PlayerData[playerid][pAddiction],
+		PlayerData[playerid][pHunger],
+		PlayerData[playerid][pThirst],
+		PlayerData[playerid][pFatigue],
 		PlayerData[playerid][pCarryLimit],
 		0
 	);
@@ -2319,16 +3127,19 @@ stock SavePlayerPosition(playerid)
 	new money = GetPlayerMoney(playerid);
 	PlayerData[playerid][pMoney] = money;
 
-	new query[256];
+	new query[512];
 	if (PlayerData[playerid][pAccountId] != INVALID_ACCOUNT_ID)
 	{
 		mysql_format(g_SQL, query, sizeof(query),
-			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `id`=%d LIMIT 1",
+			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `hunger`=%d, `thirst`=%d, `fatigue`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `id`=%d LIMIT 1",
 			skin, x, y, z, a, interior, world,
 			PlayerData[playerid][pVehicleRegistered],
 			PlayerData[playerid][pTaxesPaid],
 			PlayerData[playerid][pInsured],
 			PlayerData[playerid][pAddiction],
+			PlayerData[playerid][pHunger],
+			PlayerData[playerid][pThirst],
+			PlayerData[playerid][pFatigue],
 			money,
 			PlayerData[playerid][pCarryLimit],
 			PlayerData[playerid][pTutorialDone],
@@ -2338,12 +3149,15 @@ stock SavePlayerPosition(playerid)
 	else
 	{
 		mysql_format(g_SQL, query, sizeof(query),
-			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `name`='%e' LIMIT 1",
+			"UPDATE `accounts` SET `skin`=%d, `x`=%.4f, `y`=%.4f, `z`=%.4f, `a`=%.4f, `interior`=%d, `world`=%d, `vehicle_registered`=%d, `taxes_paid`=%d, `insured`=%d, `addiction`=%d, `hunger`=%d, `thirst`=%d, `fatigue`=%d, `money`=%d, `carry_limit`=%d, `tutorial_done`=%d WHERE `name`='%e' LIMIT 1",
 			skin, x, y, z, a, interior, world,
 			PlayerData[playerid][pVehicleRegistered],
 			PlayerData[playerid][pTaxesPaid],
 			PlayerData[playerid][pInsured],
 			PlayerData[playerid][pAddiction],
+			PlayerData[playerid][pHunger],
+			PlayerData[playerid][pThirst],
+			PlayerData[playerid][pFatigue],
 			money,
 			PlayerData[playerid][pCarryLimit],
 			PlayerData[playerid][pTutorialDone],
@@ -2440,6 +3254,8 @@ stock SavePlayerState(playerid)
 	}
 	SavePlayerPosition(playerid);
 	SavePlayerInventory(playerid);
+	Job_SavePlayer(playerid);
+	Faction_SavePlayer(playerid);
 	SavePlayerDmvStatus(playerid);
 	return 1;
 }
@@ -2595,9 +3411,32 @@ public OnGameModeInit()
 	SetGameModeText("MySQL Accounts");
 	UsePlayerPedAnims();
 	gStolenPlateCount = 0;
+	for (new i = 0; i < MAX_ITEMS; i++)
+	{
+		gStorePrices[i] = STORE_PRICE_NONE;
+	}
+	gStorePrices[ITEM_WATER] = 25;
+	gStorePrices[ITEM_SANDWICH] = 35;
+	gStorePrices[ITEM_BANDAGE] = 75;
+	gStorePrices[ITEM_MEDKIT] = 150;
+	gStorePrices[ITEM_PHONE] = 500;
+	gStorePrices[ITEM_FLASHLIGHT] = 120;
+	gStorePrices[ITEM_REPAIR_KIT] = 220;
+	gStorePrices[ITEM_NOTEBOOK] = 40;
+	gStorePrices[ITEM_ROPE] = 120;
+	gStorePrices[ITEM_FISHING_ROD] = 250;
+	gStorePrices[ITEM_FUEL_CAN] = 300;
+	for (new i = 0; i < MAX_VEHICLES; i++)
+	{
+		gVehicleOwner[i] = INVALID_PLAYER_ID;
+	}
 	SetTimer("TaxiRentalTick", 60000, true);
 	SetTimer("TaxiMeterTick", 1000, true);
 	SetTimer("OnAddictionTick", DRUG_EFFECT_INTERVAL, true);
+	SetTimer("NeedsTick", 60000, true);
+	SetTimer("EconomyTick", ECON_TICK_MS, true);
+	SetTimer("FactionSalaryTick", FACTION_SALARY_TICK_MS, true);
+	SetTimer("CrimeTick", 60000, true);
 	SetTimer("AutoSaveTick", AUTO_SAVE_INTERVAL_MS, true);
 	for (new i = 0; i < MAX_DROPS; i++)
 	{
@@ -2617,6 +3456,8 @@ public OnGameModeInit()
 
 	WarehousePickup = CreatePickup(1239, 1, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z);
 	CreatePropertyTeleports();
+	FishingVendorPickup = CreatePickup(1239, 1, FISH_VENDOR_X, FISH_VENDOR_Y, FISH_VENDOR_Z);
+	FishingVendorLabel = Create3DTextLabel("Angel-Verkauf\nTippe /buyrod", 0x67B7FFFF, FISH_VENDOR_X, FISH_VENDOR_Y, FISH_VENDOR_Z + 0.7, 15.0, 0, 0);
 
 	for (new i = 0; i < sizeof(gSkinList); i++)
 	{
@@ -2628,6 +3469,7 @@ public OnGameModeInit()
 
 	new vehicleid = CreateVehicle(411, PREVIEW_X + 6.0, PREVIEW_Y + 4.0, PREVIEW_Z, 0.0, 0, 0, -1);
 	InitVehiclePlate(vehicleid);
+	LoadVehicleStorage(vehicleid);
 	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
 	gVehicleLockLevel[vehicleid] = 3;
 	gVehicleAlarmLevel[vehicleid] = 2;
@@ -2636,6 +3478,7 @@ public OnGameModeInit()
 
 	vehicleid = CreateVehicle(560, PREVIEW_X + 8.0, PREVIEW_Y - 3.0, PREVIEW_Z, 180.0, 0, 0, -1);
 	InitVehiclePlate(vehicleid);
+	LoadVehicleStorage(vehicleid);
 	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
 	gVehicleLockLevel[vehicleid] = 2;
 	gVehicleAlarmLevel[vehicleid] = 1;
@@ -2644,6 +3487,7 @@ public OnGameModeInit()
 
 	vehicleid = CreateVehicle(489, PREVIEW_X + 12.0, PREVIEW_Y + 6.0, PREVIEW_Z, 90.0, 0, 0, -1);
 	InitVehiclePlate(vehicleid);
+	LoadVehicleStorage(vehicleid);
 	SetVehicleParamsEx(vehicleid, 0, 0, 0, 1, 0, 0, 0);
 	gVehicleLockLevel[vehicleid] = 4;
 	gVehicleAlarmLevel[vehicleid] = 3;
@@ -2681,6 +3525,9 @@ public OnGameModeInit()
 
 	InitCinemaObjects();
 	SetupCinemaInterior();
+	Job_Init();
+	Faction_Init();
+	Map_Init();
 	return 1;
 }
 
@@ -2695,6 +3542,16 @@ public OnGameModeExit()
 	{
 		DestroyPickup(WarehousePickup);
 	}
+	if (FishingVendorPickup)
+	{
+		DestroyPickup(FishingVendorPickup);
+		FishingVendorPickup = 0;
+	}
+	if (FishingVendorLabel != Text3D:0)
+	{
+		Delete3DTextLabel(FishingVendorLabel);
+		FishingVendorLabel = Text3D:0;
+	}
 	for (new i = 0; i < MAX_BUSINESSES; i++)
 	{
 		if (BusinessPickups[i])
@@ -2707,6 +3564,15 @@ public OnGameModeExit()
 		}
 	}
 	CleanupCinemaInterior();
+	Job_Shutdown();
+	Faction_SaveStorage();
+	for (new i = 1; i < MAX_VEHICLES; i++)
+	{
+		if (GetVehicleModel(i) != 0)
+		{
+			SaveVehicleStorage(i);
+		}
+	}
 	return 1;
 }
 
@@ -2774,8 +3640,12 @@ public OnPlayerSpawn(playerid)
 	{
 		GiveStarterKit(playerid);
 		ShowTutorialDialog(playerid);
-		SendClientMessage(playerid, -1, "Use /inv (or /inventory) to view items. Press Y to pick up drops.");
+		SendClientMessage(playerid, -1, "Nutze /inv (oder /inventory) fuer dein Inventar. Druecke Y zum Aufheben.");
 		SendClientMessage(playerid, -1, "Use /help or /todo if you're unsure what to do next.");
+	}
+	if (PlayerData[playerid][pLogged])
+	{
+		Map_RebuildForPlayer(playerid);
 	}
 	if (PlayerData[playerid][pAddiction] >= 50)
 	{
@@ -2833,11 +3703,16 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 		new dropid = GetNearestActiveDrop(playerid);
 		if (dropid != -1)
 		{
+			if (!CanPlayerCarryItem(playerid, Drops[dropid][dropItemId], Drops[dropid][dropAmount]))
+			{
+				ShowInventoryFullMessage(playerid, Drops[dropid][dropItemId], Drops[dropid][dropAmount]);
+				return 1;
+			}
 			new itemName[MAX_ITEM_NAME];
 			GetItemName(Drops[dropid][dropItemId], itemName, sizeof(itemName));
 			AddPlayerItem(playerid, Drops[dropid][dropItemId], Drops[dropid][dropAmount]);
 			new message[96];
-			format(message, sizeof(message), "You picked up %s x%d.", itemName, Drops[dropid][dropAmount]);
+			format(message, sizeof(message), "Du hast %s x%d aufgehoben.", itemName, Drops[dropid][dropAmount]);
 			SendClientMessage(playerid, -1, message);
 			ClearDrop(dropid);
 			return 1;
@@ -2914,6 +3789,19 @@ public OnPlayerRequestSpawn(playerid)
 public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 {
 	if (dialogid == DIALOG_GARAGE_HELP)
+	{
+		return 1;
+	}
+
+	if (Job_OnDialogResponse(playerid, dialogid, response, listitem, inputtext))
+	{
+		return 1;
+	}
+	if (Faction_OnDialogResponse(playerid, dialogid, response, listitem, inputtext))
+	{
+		return 1;
+	}
+	if (Map_OnDialogResponse(playerid, dialogid, response, listitem, inputtext))
 	{
 		return 1;
 	}
@@ -3130,6 +4018,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			return 1;
 		}
 
+		new bool:paid = false;
 		new cost;
 		if (!PlayerData[playerid][pVehicleRegistered])
 		{
@@ -3137,6 +4026,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			if (ChargePlayer(playerid, cost))
 			{
 				PlayerData[playerid][pVehicleRegistered] = true;
+				paid = true;
 				new vehicleid = GetPlayerVehicleID(playerid);
 				if (vehicleid != 0)
 				{
@@ -3153,6 +4043,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			if (ChargePlayer(playerid, cost))
 			{
 				PlayerData[playerid][pTaxesPaid] = true;
+				paid = true;
 				SendClientMessage(playerid, -1, "Road taxes paid.");
 			}
 		}
@@ -3162,10 +4053,18 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			if (ChargePlayer(playerid, cost))
 			{
 				PlayerData[playerid][pInsured] = true;
+				paid = true;
 				SendClientMessage(playerid, -1, "Insurance activated.");
 			}
 		}
 
+		if (paid)
+		{
+			if (Activity_Mark(playerid, ACTIVITY_DMV))
+			{
+				SendClientMessage(playerid, -1, "Vielfalt +1 (DMV).");
+			}
+		}
 		SavePlayerDmvStatus(playerid);
 		ShowDmvDialog(playerid);
 		return 1;
@@ -3187,13 +4086,13 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new options[96];
 		if (gItems[itemid][itemConsumable])
 		{
-			format(options, sizeof(options), "Use\nDrop\nGive\nDelete");
+			format(options, sizeof(options), "Benutzen\nFallenlassen\nGeben\nWegwerfen");
 		}
 		else
 		{
-			format(options, sizeof(options), "Drop\nGive\nDelete");
+			format(options, sizeof(options), "Fallenlassen\nGeben\nWegwerfen");
 		}
-		ShowPlayerDialog(playerid, DIALOG_ITEM_ACTIONS, DIALOG_STYLE_LIST, "Item Actions", options, "Select", "Back");
+		ShowPlayerDialog(playerid, DIALOG_ITEM_ACTIONS, DIALOG_STYLE_LIST, "Gegenstaende", options, "Waehlen", "Zurueck");
 		return 1;
 	}
 
@@ -3231,26 +4130,31 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		{
 			if (!RemovePlayerItem(playerid, itemid, 1))
 			{
-				SendClientMessage(playerid, -1, "You do not have that item.");
+				SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+				return 1;
+			}
+			if (!UseInventoryItem(playerid, itemid))
+			{
+				SendClientMessage(playerid, -1, "Nichts passiert.");
 				return 1;
 			}
 			new itemName[MAX_ITEM_NAME];
 			GetItemName(itemid, itemName, sizeof(itemName));
 			new message[96];
-			format(message, sizeof(message), "You used %s.", itemName);
+			format(message, sizeof(message), "Du hast %s benutzt.", itemName);
 			SendClientMessage(playerid, -1, message);
 			return 1;
 		}
 
 		if (action == ACTION_GIVE)
 		{
-			ShowPlayerDialog(playerid, DIALOG_ITEM_GIVE, DIALOG_STYLE_INPUT, "Give Item", "Enter <player> <amount>:", "Give", "Cancel");
+			ShowPlayerDialog(playerid, DIALOG_ITEM_GIVE, DIALOG_STYLE_INPUT, "Gegenstand geben", "Eingabe: <player> <menge>", "Geben", "Abbrechen");
 			return 1;
 		}
 
 		if (action == ACTION_DROP || action == ACTION_DELETE)
 		{
-			ShowPlayerDialog(playerid, DIALOG_ITEM_AMOUNT, DIALOG_STYLE_INPUT, "Item Amount", "Enter amount:", "OK", "Cancel");
+			ShowPlayerDialog(playerid, DIALOG_ITEM_AMOUNT, DIALOG_STYLE_INPUT, "Menge", "Eingabe: menge", "OK", "Abbrechen");
 			return 1;
 		}
 	}
@@ -3266,7 +4170,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new invAction:action = PlayerData[playerid][pSelectedAction];
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Invalid amount.");
+			SendClientMessage(playerid, -1, "Ungueltige Menge.");
 			return 1;
 		}
 
@@ -3274,7 +4178,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		{
 			if (!RemovePlayerItem(playerid, itemid, amount))
 			{
-				SendClientMessage(playerid, -1, "You do not have enough of that item.");
+				SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 				return 1;
 			}
 
@@ -3282,13 +4186,13 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			if (dropid == -1)
 			{
 				AddPlayerItem(playerid, itemid, amount);
-				SendClientMessage(playerid, -1, "No space to drop items right now.");
+				SendClientMessage(playerid, -1, "Kein Platz zum Ablegen.");
 				return 1;
 			}
 			new itemName[MAX_ITEM_NAME];
 			GetItemName(itemid, itemName, sizeof(itemName));
 			new message[96];
-			format(message, sizeof(message), "Dropped %s x%d. Press Y to pick up.", itemName, amount);
+			format(message, sizeof(message), "Du hast %s x%d fallengelassen. Druecke Y zum Aufheben.", itemName, amount);
 			SendClientMessage(playerid, -1, message);
 			return 1;
 		}
@@ -3297,13 +4201,13 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		{
 			if (!RemovePlayerItem(playerid, itemid, amount))
 			{
-				SendClientMessage(playerid, -1, "You do not have enough of that item.");
+				SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 				return 1;
 			}
 			new itemName[MAX_ITEM_NAME];
 			GetItemName(itemid, itemName, sizeof(itemName));
 			new message[96];
-			format(message, sizeof(message), "Deleted %s x%d.", itemName, amount);
+			format(message, sizeof(message), "Du hast %s x%d entsorgt.", itemName, amount);
 			SendClientMessage(playerid, -1, message);
 			return 1;
 		}
@@ -3327,13 +4231,18 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 
 		if (targetid == INVALID_PLAYER_ID || amount < 1 || !IsValidItem(itemid))
 		{
-			SendClientMessage(playerid, -1, "Usage: <player> <amount>");
+			SendClientMessage(playerid, -1, "Eingabe: <player> <menge>");
+			return 1;
+		}
+		if (!CanPlayerCarryItem(targetid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "Zielinventar ist voll.");
 			return 1;
 		}
 
 		if (!RemovePlayerItem(playerid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 			return 1;
 		}
 
@@ -3341,11 +4250,35 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "You gave %s x%d.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d gegeben.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 
-		format(message, sizeof(message), "You received %s x%d.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d erhalten.", itemName, amount);
 		SendClientMessage(targetid, -1, message);
+		return 1;
+	}
+
+	if (dialogid == DIALOG_PHONE)
+	{
+		if (!response)
+		{
+			return 1;
+		}
+		switch (listitem)
+		{
+			case 0:
+			{
+				SendClientMessage(playerid, -1, "Rufe ein Taxi mit /taxi.");
+			}
+			case 1:
+			{
+				SendClientMessage(playerid, -1, "Kleinanzeigen sind noch geschlossen. Schau spaeter vorbei.");
+			}
+			case 2:
+			{
+				ShowStatusDialog(playerid);
+			}
+		}
 		return 1;
 	}
 
@@ -3358,7 +4291,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
 			return 1;
 		}
 		new itemid = GetVehicleItemIdFromList(vehicleid, listitem);
@@ -3368,7 +4301,7 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		}
 		PlayerData[playerid][pSelectedItem] = itemid;
 		PlayerData[playerid][pSelectedAction] = ACTION_VEH_TAKE;
-		ShowPlayerDialog(playerid, DIALOG_VEHICLE_AMOUNT, DIALOG_STYLE_INPUT, "Take Item", "Enter amount:", "Take", "Cancel");
+		ShowPlayerDialog(playerid, DIALOG_VEHICLE_AMOUNT, DIALOG_STYLE_INPUT, "Menge", "Eingabe: menge", "Nehmen", "Abbrechen");
 		return 1;
 	}
 
@@ -3381,26 +4314,36 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
 			return 1;
 		}
 		new amount = strval(inputtext);
 		new itemid = PlayerData[playerid][pSelectedItem];
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Invalid amount.");
+			SendClientMessage(playerid, -1, "Ungueltige Menge.");
+			return 1;
+		}
+		if (!CanPlayerCarryItem(playerid, itemid, amount))
+		{
+			ShowInventoryFullMessage(playerid, itemid, amount);
 			return 1;
 		}
 		if (!RemoveVehicleItem(vehicleid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "That item is not available in the vehicle.");
+			SendClientMessage(playerid, -1, "Der Gegenstand ist nicht im Fahrzeug.");
 			return 1;
 		}
-		AddPlayerItem(playerid, itemid, amount);
+		if (!AddPlayerItem(playerid, itemid, amount))
+		{
+			AddVehicleItem(vehicleid, itemid, amount);
+			ShowInventoryFullMessage(playerid, itemid, amount);
+			return 1;
+		}
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "Took %s x%d from the vehicle.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d aus dem Fahrzeug genommen.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -3410,6 +4353,15 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 
 public OnPlayerPickUpPickup(playerid, pickupid)
 {
+	if (Job_OnPlayerPickUpPickup(playerid, pickupid))
+	{
+		return 1;
+	}
+	if (pickupid == FishingVendorPickup)
+	{
+		SendClientMessage(playerid, -1, "Angel-Verkauf: Nutze /buyrod oder /buyitem 13 1.");
+		return 1;
+	}
 	if (pickupid == WarehousePickup)
 	{
 		SendClientMessage(playerid, -1, "Component warehouse: use /buycrates [count] to buy crates.");
@@ -3429,6 +4381,20 @@ public OnPlayerPickUpPickup(playerid, pickupid)
 
 public OnPlayerEnterCheckpoint(playerid)
 {
+	if (Job_OnPlayerEnterCheckpoint(playerid))
+	{
+		return 1;
+	}
+	if (PlayerData[playerid][pWarehouseWaypoint])
+	{
+		if (GetPlayerDistanceFromPoint(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z) <= 4.0)
+		{
+			ClearPlayerCheckpointEx(playerid);
+			PlayerData[playerid][pWarehouseWaypoint] = false;
+			SendClientMessage(playerid, -1, "Du bist am Lager angekommen. Nutze /buycrates [anzahl].");
+			return 1;
+		}
+	}
 	if (!PlayerData[playerid][pHasDelivery])
 	{
 		return 0;
@@ -3441,11 +4407,9 @@ public OnPlayerEnterCheckpoint(playerid)
 		return 0;
 	}
 
-	if (GetPlayerDistanceFromPoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ]) <= BUSINESS_BUY_RADIUS)
-	{
-		DeliverComponents(playerid, businessId);
-		ClearDeliveryCheckpoint(playerid);
-	}
+	DeliverComponents(playerid, businessId);
+	ClearDeliveryCheckpoint(playerid);
+	PlayerData[playerid][pWarehouseWaypoint] = false;
 	return 1;
 }
 
@@ -3454,7 +4418,7 @@ public OnPlayerClickMap(playerid, Float:fX, Float:fY, Float:fZ)
 	new driverid = TaxiDriverForCustomer[playerid];
 	if (driverid != INVALID_PLAYER_ID)
 	{
-		SetPlayerCheckpoint(driverid, fX, fY, fZ, 4.0);
+		SetPlayerCheckpointEx(driverid, fX, fY, fZ, 4.0);
 		SendClientMessage(driverid, -1, "Customer updated their waypoint.");
 	}
 	return 1;
@@ -3466,6 +4430,21 @@ public OnPlayerStateChange(playerid, newstate, oldstate)
 	{
 		StopAlpr(playerid);
 	}
+	return 1;
+}
+
+public OnVehicleSpawn(vehicleid)
+{
+	if (GetVehicleModel(vehicleid) != 0)
+	{
+		LoadVehicleStorage(vehicleid);
+	}
+	return 1;
+}
+
+public OnVehicleDeath(vehicleid, killerid)
+{
+	SaveVehicleStorage(vehicleid);
 	return 1;
 }
 
@@ -3622,6 +4601,13 @@ public AutoSaveTick()
 			continue;
 		}
 		SavePlayerState(i);
+	}
+	for (new v = 1; v < MAX_VEHICLES; v++)
+	{
+		if (GetVehicleModel(v) != 0)
+		{
+			SaveVehicleStorage(v);
+		}
 	}
 	return 1;
 }
@@ -3924,12 +4910,22 @@ public OnAccountCheck(playerid)
 		cache_get_value_name_int(0, "taxes_paid", PlayerData[playerid][pTaxesPaid]);
 		cache_get_value_name_int(0, "insured", PlayerData[playerid][pInsured]);
 		cache_get_value_name_int(0, "addiction", PlayerData[playerid][pAddiction]);
+		cache_get_value_name_int(0, "hunger", PlayerData[playerid][pHunger]);
+		cache_get_value_name_int(0, "thirst", PlayerData[playerid][pThirst]);
+		cache_get_value_name_int(0, "fatigue", PlayerData[playerid][pFatigue]);
+		ApplyNeedClamp(playerid);
 		cache_get_value_name_int(0, "money", PlayerData[playerid][pMoney]);
 		cache_get_value_name_int(0, "carry_limit", PlayerData[playerid][pCarryLimit]);
+		if (PlayerData[playerid][pCarryLimit] < BASE_CARRY_LIMIT_KG)
+		{
+			PlayerData[playerid][pCarryLimit] = BASE_CARRY_LIMIT_KG;
+		}
 		cache_get_value_name_int(0, "tutorial_done", PlayerData[playerid][pTutorialDone]);
 		LogAuthEvent(playerid, "account_found");
 
 		LoadPlayerInventory(playerid);
+		Job_LoadPlayer(playerid);
+		Faction_LoadPlayer(playerid);
 		ShowLoginDialog(playerid);
 	}
 	else
@@ -3948,6 +4944,14 @@ public OnAccountCreated(playerid)
 		return 0;
 	}
 	PlayerData[playerid][pAccountId] = cache_insert_id();
+	if (PlayerData[playerid][pAccountId] == 0)
+	{
+		new errMsg[128];
+		mysql_error(errMsg, sizeof(errMsg), g_SQL);
+		printf("[MySQL] Account insert failed for player %d: %s", playerid, errMsg);
+		SendClientMessage(playerid, -1, "Registrierung fehlgeschlagen (DB-Fehler). Bitte erneut versuchen.");
+		return 1;
+	}
 	PlayerData[playerid][pMoney] = STARTER_CASH;
 	if (GetPlayerMoney(playerid) < STARTER_CASH)
 	{
@@ -4033,6 +5037,19 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		return 1;
 	}
 
+	if (Job_OnPlayerCommandText(playerid, cmdtext))
+	{
+		return 1;
+	}
+	if (Faction_OnPlayerCommandText(playerid, cmdtext))
+	{
+		return 1;
+	}
+	if (Map_OnPlayerCommandText(playerid, cmdtext))
+	{
+		return 1;
+	}
+
 	new idx;
 	new cmd[64];
 	cmd = strtok(cmdtext, idx);
@@ -4091,10 +5108,56 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		ShowHelpDialog(playerid);
 		return 1;
 	}
+	if (!strcmp(cmd, "/status", true))
+	{
+		ShowStatusDialog(playerid);
+		return 1;
+	}
+	if (!strcmp(cmd, "/tp", true))
+	{
+		if (!gCheckpointActive[playerid])
+		{
+			SendClientMessage(playerid, -1, "Kein aktiver Marker.");
+			return 1;
+		}
+		new Float:x = gCheckpointX[playerid];
+		new Float:y = gCheckpointY[playerid];
+		new Float:z = gCheckpointZ[playerid];
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid != 0)
+		{
+			new Float:a;
+			GetVehicleZAngle(vehicleid, a);
+			SetVehiclePos(vehicleid, x, y, z + 0.5);
+			SetVehicleZAngle(vehicleid, a);
+		}
+		else
+		{
+			SetPlayerPos(playerid, x, y, z);
+		}
+		SendClientMessage(playerid, -1, "Teleportiert zum Marker.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/stats", true))
+	{
+		new msg[144];
+		format(msg, sizeof(msg), "Hunger: %d | Durst: %d | Muedigkeit: %d | Inventar: %d/%dkg",
+			PlayerData[playerid][pHunger], PlayerData[playerid][pThirst], PlayerData[playerid][pFatigue],
+			GetPlayerInventoryWeight(playerid), PlayerData[playerid][pCarryLimit]);
+		SendClientMessage(playerid, -1, msg);
+		return 1;
+	}
 
 	if (!strcmp(cmd, "/guide", true))
 	{
 		ShowTutorialDialog(playerid);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/phone", true) || !strcmp(cmd, "/handy", true))
+	{
+		ShowPlayerDialog(playerid, DIALOG_PHONE, DIALOG_STYLE_LIST, "Handy", "Taxi rufen\nKleinanzeigen\nStatus", "Waehlen", "Schliessen");
 		return 1;
 	}
 
@@ -4111,7 +5174,8 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			SendClientMessage(playerid, -1, "You already have a delivery route. Use /cancelbiz to clear it first.");
 			return 1;
 		}
-		SetPlayerCheckpoint(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z, 4.0);
+		PlayerData[playerid][pWarehouseWaypoint] = true;
+		SetPlayerCheckpointEx(playerid, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z, 4.0);
 		SendClientMessage(playerid, -1, "Warehouse waypoint set.");
 		return 1;
 	}
@@ -4177,15 +5241,15 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new targetid = GetTargetPlayerId(targetArg);
 		if (targetid == INVALID_PLAYER_ID)
 		{
-			SendClientMessage(playerid, -1, "Usage: /showitems <player>");
+			SendClientMessage(playerid, -1, "Eingabe: /showitems <player>");
 			return 1;
 		}
 		new name[MAX_PLAYER_NAME];
 		GetPlayerName(playerid, name, sizeof(name));
 		new title[96];
-		format(title, sizeof(title), "%s shows you their items:", name);
+		format(title, sizeof(title), "%s zeigt dir sein Inventar:", name);
 		SendInventoryList(playerid, targetid, title);
-		SendClientMessage(playerid, -1, "You showed your items.");
+		SendClientMessage(playerid, -1, "Du hast dein Inventar gezeigt.");
 		return 1;
 	}
 
@@ -4204,13 +5268,18 @@ public OnPlayerCommandText(playerid, cmdtext[])
 
 		if (targetid == INVALID_PLAYER_ID || !IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Usage: /giveitem <player> <itemid> <amount>");
+			SendClientMessage(playerid, -1, "Eingabe: /giveitem <player> <itemid> <menge>");
+			return 1;
+		}
+		if (!CanPlayerCarryItem(targetid, itemid, amount))
+		{
+			SendClientMessage(playerid, -1, "Zielinventar ist voll.");
 			return 1;
 		}
 
 		if (!RemovePlayerItem(playerid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 			return 1;
 		}
 
@@ -4219,10 +5288,10 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		GetItemName(itemid, itemName, sizeof(itemName));
 
 		new message[96];
-		format(message, sizeof(message), "You gave %s x%d.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d gegeben.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 
-		format(message, sizeof(message), "You received %s x%d.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d erhalten.", itemName, amount);
 		SendClientMessage(targetid, -1, message);
 		return 1;
 	}
@@ -4251,26 +5320,31 @@ public OnPlayerCommandText(playerid, cmdtext[])
 
 		if (!IsValidItem(itemid))
 		{
-			SendClientMessage(playerid, -1, "Usage: /useitem <itemid>");
+			SendClientMessage(playerid, -1, "Eingabe: /useitem <itemid>");
 			return 1;
 		}
 
 		if (!gItems[itemid][itemConsumable])
 		{
-			SendClientMessage(playerid, -1, "That item cannot be consumed.");
+			SendClientMessage(playerid, -1, "Dieser Gegenstand kann nicht benutzt werden.");
 			return 1;
 		}
 
 		if (!RemovePlayerItem(playerid, itemid, 1))
 		{
-			SendClientMessage(playerid, -1, "You do not have that item.");
+			SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+			return 1;
+		}
+		if (!UseInventoryItem(playerid, itemid))
+		{
+			SendClientMessage(playerid, -1, "Nichts passiert.");
 			return 1;
 		}
 
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "You used %s.", itemName);
+		format(message, sizeof(message), "Du hast %s benutzt.", itemName);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -4286,18 +5360,18 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new amount = strval(amountArg);
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Usage: /deleteitem <itemid> <amount>");
+			SendClientMessage(playerid, -1, "Eingabe: /deleteitem <itemid> <menge>");
 			return 1;
 		}
 		if (!RemovePlayerItem(playerid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 			return 1;
 		}
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "Deleted %s x%d.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d entsorgt.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -4313,12 +5387,12 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new amount = strval(amountArg);
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Usage: /dropitem <itemid> <amount>");
+			SendClientMessage(playerid, -1, "Eingabe: /dropitem <itemid> <menge>");
 			return 1;
 		}
 		if (!RemovePlayerItem(playerid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 			return 1;
 		}
 
@@ -4326,13 +5400,13 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		if (dropid == -1)
 		{
 			AddPlayerItem(playerid, itemid, amount);
-			SendClientMessage(playerid, -1, "No space to drop items right now.");
+			SendClientMessage(playerid, -1, "Kein Platz zum Ablegen.");
 			return 1;
 		}
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "Dropped %s x%d. Press Y to pick up.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d fallengelassen. Druecke Y zum Aufheben.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -4342,7 +5416,12 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
+			return 1;
+		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
 			return 1;
 		}
 		ShowVehicleItemsDialog(playerid, vehicleid);
@@ -4351,7 +5430,37 @@ public OnPlayerCommandText(playerid, cmdtext[])
 
 	if (!strcmp(cmd, "/trunk", true))
 	{
-		SendClientMessage(playerid, -1, "You open the trunk. Use /vehitems to manage vehicle inventory.");
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
+			return 1;
+		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
+			return 1;
+		}
+		SendClientMessage(playerid, -1, "Du oeffnest den Kofferraum. Nutze /vehitems.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/vclaim", true))
+	{
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
+			return 1;
+		}
+		if (gVehicleOwner[vehicleid] != INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "Dieses Fahrzeug gehoert bereits jemandem.");
+			return 1;
+		}
+		gVehicleOwner[vehicleid] = playerid;
+		ToggleVehicleLock(vehicleid, true);
+		SendClientMessage(playerid, -1, "Fahrzeug beansprucht. Es ist nun abgeschlossen.");
 		return 1;
 	}
 
@@ -4360,10 +5469,15 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
 			return 1;
 		}
-		SendVehicleInventoryList(playerid, vehicleid, "Vehicle inventory:");
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
+			return 1;
+		}
+		SendVehicleInventoryList(playerid, vehicleid, "Fahrzeug-Inventar:");
 		return 1;
 	}
 
@@ -4372,7 +5486,12 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
+			return 1;
+		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
 			return 1;
 		}
 		new itemArg[64];
@@ -4384,19 +5503,29 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new amount = strlen(amountArg) ? strval(amountArg) : 1;
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Usage: /vtitem <itemid> (<amount>)");
+			SendClientMessage(playerid, -1, "Eingabe: /vtitem <itemid> (<menge>)");
+			return 1;
+		}
+		if (!CanPlayerCarryItem(playerid, itemid, amount))
+		{
+			ShowInventoryFullMessage(playerid, itemid, amount);
 			return 1;
 		}
 		if (!RemoveVehicleItem(vehicleid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "That item is not available in the vehicle.");
+			SendClientMessage(playerid, -1, "Der Gegenstand ist nicht im Fahrzeug.");
 			return 1;
 		}
-		AddPlayerItem(playerid, itemid, amount);
+		if (!AddPlayerItem(playerid, itemid, amount))
+		{
+			AddVehicleItem(vehicleid, itemid, amount);
+			ShowInventoryFullMessage(playerid, itemid, amount);
+			return 1;
+		}
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "Took %s x%d from the vehicle.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d aus dem Fahrzeug genommen.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -4406,7 +5535,12 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
+			return 1;
+		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
 			return 1;
 		}
 		new itemArg[64];
@@ -4418,19 +5552,24 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new amount = strlen(amountArg) ? strval(amountArg) : 1;
 		if (!IsValidItem(itemid) || amount < 1)
 		{
-			SendClientMessage(playerid, -1, "Usage: /vpitem <itemid> (<amount>)");
+			SendClientMessage(playerid, -1, "Eingabe: /vpitem <itemid> (<menge>)");
 			return 1;
 		}
 		if (!RemovePlayerItem(playerid, itemid, amount))
 		{
-			SendClientMessage(playerid, -1, "You do not have enough of that item.");
+			SendClientMessage(playerid, -1, "Du hast nicht genug davon.");
 			return 1;
 		}
-		AddVehicleItem(vehicleid, itemid, amount);
+		if (!AddVehicleItem(vehicleid, itemid, amount))
+		{
+			AddPlayerItem(playerid, itemid, amount);
+			SendClientMessage(playerid, -1, "Kofferraum ist voll.");
+			return 1;
+		}
 		new itemName[MAX_ITEM_NAME];
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
-		format(message, sizeof(message), "Placed %s x%d into the vehicle.", itemName, amount);
+		format(message, sizeof(message), "Du hast %s x%d ins Fahrzeug gelegt.", itemName, amount);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -4440,19 +5579,53 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
 			return 1;
 		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
+			return 1;
+		}
+		new freeKg = PlayerData[playerid][pCarryLimit] - GetPlayerInventoryWeight(playerid);
+		new bool:partial = false;
 		for (new i = 0; i < MAX_ITEMS; i++)
 		{
-			if (VehicleItems[vehicleid][i] < 1)
+			if (VehicleItems[vehicleid][i] < 1 || freeKg < 1)
 			{
 				continue;
 			}
-			AddPlayerItem(playerid, i, VehicleItems[vehicleid][i]);
-			VehicleItems[vehicleid][i] = 0;
+			new weightKg = gItems[i][itemWeightKg];
+			if (weightKg < 1)
+			{
+				continue;
+			}
+			new canAmount = freeKg / weightKg;
+			if (canAmount < 1)
+			{
+				partial = true;
+				continue;
+			}
+			new take = VehicleItems[vehicleid][i];
+			if (take > canAmount)
+			{
+				take = canAmount;
+				partial = true;
+			}
+			if (AddPlayerItem(playerid, i, take))
+			{
+				VehicleItems[vehicleid][i] -= take;
+				freeKg -= take * weightKg;
+			}
 		}
-		SendClientMessage(playerid, -1, "You took all items from the vehicle.");
+		if (partial)
+		{
+			SendClientMessage(playerid, -1, "Inventar voll. Nicht alles konnte genommen werden.");
+		}
+		else
+		{
+			SendClientMessage(playerid, -1, "Du hast alle Gegenstaende aus dem Fahrzeug genommen.");
+		}
 		return 1;
 	}
 
@@ -4461,19 +5634,53 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new vehicleid = GetPlayerVehicleID(playerid);
 		if (vehicleid == 0)
 		{
-			SendClientMessage(playerid, -1, "You are not in a vehicle.");
+			SendClientMessage(playerid, -1, "Du bist in keinem Fahrzeug.");
 			return 1;
 		}
+		if (!CanAccessVehicleTrunk(playerid, vehicleid))
+		{
+			SendClientMessage(playerid, -1, "Fahrzeug ist abgeschlossen.");
+			return 1;
+		}
+		new freeKg = GetVehicleTrunkCapacity(vehicleid) - GetVehicleInventoryWeight(vehicleid);
+		new bool:partial = false;
 		for (new i = 0; i < MAX_ITEMS; i++)
 		{
-			if (PlayerItems[playerid][i] < 1)
+			if (PlayerItems[playerid][i] < 1 || freeKg < 1)
 			{
 				continue;
 			}
-			AddVehicleItem(vehicleid, i, PlayerItems[playerid][i]);
-			PlayerItems[playerid][i] = 0;
+			new weightKg = gItems[i][itemWeightKg];
+			if (weightKg < 1)
+			{
+				continue;
+			}
+			new canAmount = freeKg / weightKg;
+			if (canAmount < 1)
+			{
+				partial = true;
+				continue;
+			}
+			new put = PlayerItems[playerid][i];
+			if (put > canAmount)
+			{
+				put = canAmount;
+				partial = true;
+			}
+			if (AddVehicleItem(vehicleid, i, put))
+			{
+				PlayerItems[playerid][i] -= put;
+				freeKg -= put * weightKg;
+			}
 		}
-		SendClientMessage(playerid, -1, "You placed all items into the vehicle.");
+		if (partial)
+		{
+			SendClientMessage(playerid, -1, "Kofferraum voll. Nicht alles passte rein.");
+		}
+		else
+		{
+			SendClientMessage(playerid, -1, "Du hast alle Gegenstaende ins Fahrzeug gelegt.");
+		}
 		return 1;
 	}
 
@@ -4873,7 +6080,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			return 1;
 		}
 
-		GivePlayerMoney(playerid, -BusinessData[businessId][bPrice]);
+		GivePlayerMoneyLogged(playerid, -BusinessData[businessId][bPrice], "biz_buy");
 		BusinessData[businessId][bOwner] = playerid;
 		BusinessData[businessId][bComponents] = BUSINESS_COMPONENTS_DEFAULT;
 		UpdateBusinessLabel(businessId);
@@ -4940,7 +6147,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		}
 
 		new refund = BusinessData[businessId][bPrice] / 2;
-		GivePlayerMoney(playerid, refund);
+		Economy_Payout(playerid, refund, "biz_sell");
 		BusinessData[businessId][bOwner] = INVALID_PLAYER_ID;
 		BusinessData[businessId][bComponents] = 0;
 		BusinessData[businessId][bEarnings] = 0;
@@ -4954,25 +6161,99 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		new businessId = GetNearestBusiness(playerid);
 		if (businessId == -1)
 		{
-			SendClientMessage(playerid, -1, "You are not near a business.");
+			if (!IsPlayerNearFishingVendor(playerid))
+			{
+				SendClientMessage(playerid, -1, "Du bist bei keinem Geschaeft.");
+				return 1;
+			}
+			new itemToken[16];
+			GetCommandToken(cmdtext, idx, itemToken, sizeof(itemToken));
+			if (itemToken[0] == '\0')
+			{
+				SendClientMessage(playerid, -1, "Usage: /buyitem [itemid] [count]");
+				return 1;
+			}
+			new itemid = strval(itemToken);
+			new countToken[16];
+			GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
+			new count = strval(countToken);
+			if (count < 1)
+			{
+				count = 1;
+			}
+			if (itemid != ITEM_FISHING_ROD)
+			{
+				SendClientMessage(playerid, -1, "Hier gibt es nur Angeln (Item 13).");
+				return 1;
+			}
+			BuyStoreItem(playerid, itemid, count);
 			return 1;
 		}
 
-		new costToken[16];
+		if (BusinessData[businessId][bType] == BUSINESS_247)
+		{
+			new itemToken[16];
+			GetCommandToken(cmdtext, idx, itemToken, sizeof(itemToken));
+			if (itemToken[0] == '\0')
+			{
+				SendClientMessage(playerid, -1, "Usage: /buyitem [itemid] [count]");
+				return 1;
+			}
+			new itemid = strval(itemToken);
+			new countToken[16];
+			GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
+			new count = strval(countToken);
+			if (count < 1)
+			{
+				count = 1;
+			}
+			if (!CanStoreSellItem(itemid))
+			{
+				SendClientMessage(playerid, -1, "Dieser Artikel wird hier nicht verkauft.");
+				return 1;
+			}
+			if (BusinessData[businessId][bComponents] < count)
+			{
+				SendClientMessage(playerid, -1, "Der Laden ist gerade leer.");
+				return 1;
+			}
+			new cost = gStorePrices[itemid] * count;
+			if (GetPlayerMoney(playerid) < cost)
+			{
+				SendClientMessage(playerid, -1, "Du hast nicht genug Geld.");
+				return 1;
+			}
+			if (!CanPlayerCarryItem(playerid, itemid, count))
+			{
+				ShowInventoryFullMessage(playerid, itemid, count);
+				return 1;
+			}
+			GivePlayerMoneyLogged(playerid, -cost, "store_buy");
+			BusinessData[businessId][bComponents] -= count;
+			AddPlayerItem(playerid, itemid, count);
+			new owner = BusinessData[businessId][bOwner];
+			if (owner != INVALID_PLAYER_ID && IsPlayerConnected(owner))
+			{
+				Economy_Payout(owner, cost, "store_sale");
+				BusinessData[businessId][bEarnings] += cost;
+			}
+			UpdateBusinessLabel(businessId);
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new msg[96];
+			format(msg, sizeof(msg), "Gekauft: %s x%d fuer $%d.", itemName, count, cost);
+			SendClientMessage(playerid, -1, msg);
+			return 1;
+		}
+
 		new countToken[16];
-		GetCommandToken(cmdtext, idx, costToken, sizeof(costToken));
 		GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
-		new cost = strval(costToken);
 		new count = strval(countToken);
 		if (count < 1)
 		{
 			count = 1;
 		}
-		if (cost < 1)
-		{
-			SendClientMessage(playerid, -1, "Usage: /buyitem [cost] [count]");
-			return 1;
-		}
+		new cost = BusinessData[businessId][bComponentPrice] * count;
 
 		if (BusinessData[businessId][bComponents] < count)
 		{
@@ -4986,7 +6267,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			return 1;
 		}
 
-		GivePlayerMoney(playerid, -cost);
+		GivePlayerMoneyLogged(playerid, -cost, "biz_buyitem");
 		BusinessData[businessId][bComponents] -= count;
 
 		new owner = BusinessData[businessId][bOwner];
@@ -4997,12 +6278,53 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			{
 				payout = cost / 2;
 			}
-			GivePlayerMoney(owner, payout);
+			Economy_Payout(owner, payout, "biz_sale");
 			BusinessData[businessId][bEarnings] += payout;
 		}
 
-		SendClientMessage(playerid, -1, "Purchase completed.");
+		SendClientMessage(playerid, -1, "Kauf abgeschlossen.");
 		UpdateBusinessLabel(businessId);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/buyrod", true))
+	{
+		new businessId = GetNearestBusiness(playerid);
+		if (!IsPlayerNearFishingVendor(playerid) && businessId == -1)
+		{
+			SendClientMessage(playerid, -1, "Du musst bei einem 24/7 oder dem Angel-Verkauf sein.");
+			return 1;
+		}
+
+		if (businessId != -1 && BusinessData[businessId][bType] == BUSINESS_247)
+		{
+			if (BusinessData[businessId][bComponents] < 1)
+			{
+				SendClientMessage(playerid, -1, "Der Laden ist gerade leer.");
+				return 1;
+			}
+			if (!BuyStoreItem(playerid, ITEM_FISHING_ROD, 1))
+			{
+				return 1;
+			}
+			BusinessData[businessId][bComponents] -= 1;
+			new owner = BusinessData[businessId][bOwner];
+			if (owner != INVALID_PLAYER_ID && IsPlayerConnected(owner))
+			{
+				Economy_Payout(owner, gStorePrices[ITEM_FISHING_ROD], "store_sale");
+				BusinessData[businessId][bEarnings] += gStorePrices[ITEM_FISHING_ROD];
+			}
+			UpdateBusinessLabel(businessId);
+			return 1;
+		}
+
+		if (!IsPlayerNearFishingVendor(playerid))
+		{
+			SendClientMessage(playerid, -1, "Du musst bei einem 24/7 oder dem Angel-Verkauf sein.");
+			return 1;
+		}
+
+		BuyStoreItem(playerid, ITEM_FISHING_ROD, 1);
 		return 1;
 	}
 
@@ -5030,9 +6352,15 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			return 1;
 		}
 
-		GivePlayerMoney(playerid, -totalCost);
-		PlayerData[playerid][pCrates] += count;
-		SendClientMessage(playerid, -1, "Crates purchased. Deliver them with /deliverbiz [businessId].");
+		if (!CanPlayerCarryItem(playerid, ITEM_CRATE, count))
+		{
+			ShowInventoryFullMessage(playerid, ITEM_CRATE, count);
+			return 1;
+		}
+
+		GivePlayerMoneyLogged(playerid, -totalCost, "buy_crates");
+		AddPlayerItem(playerid, ITEM_CRATE, count);
+		SendClientMessage(playerid, -1, "Kisten gekauft. Liefere sie mit /deliverbiz [businessId].");
 		return 1;
 	}
 
@@ -5046,12 +6374,12 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			SendClientMessage(playerid, -1, "Usage: /deliverbiz [businessId]");
 			return 1;
 		}
-		if (PlayerData[playerid][pCrates] < 1)
+		if (PlayerItems[playerid][ITEM_CRATE] < 1)
 		{
 			SendClientMessage(playerid, -1, "You have no crates to deliver.");
 			return 1;
 		}
-		SetPlayerCheckpoint(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ], 4.0);
+		SetPlayerCheckpointEx(playerid, BusinessData[businessId][bX], BusinessData[businessId][bY], BusinessData[businessId][bZ], 4.0);
 		PlayerData[playerid][pHasDelivery] = true;
 		PlayerData[playerid][pDeliveryBiz] = businessId;
 		SendClientMessage(playerid, -1, "Delivery GPS set. Drive to the checkpoint to deliver components.");
@@ -5062,6 +6390,38 @@ public OnPlayerCommandText(playerid, cmdtext[])
 	{
 		ClearDeliveryCheckpoint(playerid);
 		SendClientMessage(playerid, -1, "Delivery route cleared.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/launder", true))
+	{
+		if (!IsPlayerAtChopShop(playerid))
+		{
+			SendClientMessage(playerid, -1, "Du musst am Chop Shop sein.");
+			return 1;
+		}
+		new total = 0;
+		for (new i = 0; i < MAX_ITEMS; i++)
+		{
+			if (PlayerItems[playerid][i] < 1 || !IsItemIllegal(i))
+			{
+				continue;
+			}
+			new value = GetIllegalItemValue(i);
+			if (value < 1)
+			{
+				continue;
+			}
+			total += value * PlayerItems[playerid][i];
+			PlayerItems[playerid][i] = 0;
+		}
+		if (total < 1)
+		{
+			SendClientMessage(playerid, -1, "Keine illegalen Gegenstaende zum Waschen.");
+			return 1;
+		}
+		Economy_Payout(playerid, total, "launder");
+		SendClientMessage(playerid, -1, "Geldwaesche abgeschlossen.");
 		return 1;
 	}
 
@@ -5228,7 +6588,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		SendClientMessage(playerid, -1, "Taxi request accepted. Contact the customer and proceed.");
 		new Float:x, Float:y, Float:z;
 		GetPlayerPos(customerid, x, y, z);
-		SetPlayerCheckpoint(playerid, x, y, z, 4.0);
+		SetPlayerCheckpointEx(playerid, x, y, z, 4.0);
 		return 1;
 	}
 
@@ -5276,6 +6636,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		SendClientMessage(playerid, -1, "Taxi request completed.");
 		SendClientMessage(customerid, -1, "Taxi ride completed. Please roleplay the payment.");
 		TaxiStopMeter(playerid);
+		Activity_Mark(playerid, ACTIVITY_TAXI);
 		return 1;
 	}
 
@@ -5545,7 +6906,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 	if (!strcmp(cmd, "/addiction", true))
 	{
 		new message[64];
-		format(message, sizeof(message), "Addiction: %d | Carry limit: %dkg", PlayerData[playerid][pAddiction], PlayerData[playerid][pCarryLimit]);
+		format(message, sizeof(message), "Addiction: %d | Inventar: %d/%dkg", PlayerData[playerid][pAddiction], GetPlayerInventoryWeight(playerid), PlayerData[playerid][pCarryLimit]);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -5560,12 +6921,26 @@ public bool:HandleLspdCommand(playerid, const cmd[], const params[])
 		SetPlayerHealth(playerid, 100.0);
 		SetPlayerArmour(playerid, 100.0);
 		SetPlayerColor(playerid, 0x3399FFFF);
+		gLspdDuty[playerid] = true;
 		SendClientMessage(playerid, -1, "LSPD duty loadout applied.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "poff", true) || !strcmp(cmd, "pdutyoff", true))
+	{
+		gLspdDuty[playerid] = false;
+		SetPlayerColor(playerid, 0xFFFFFFFF);
+		SendClientMessage(playerid, -1, "LSPD duty ended.");
 		return true;
 	}
 
 	if (!strcmp(cmd, "equipment", true))
 	{
+		if (!gLspdDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to take equipment.");
+			return true;
+		}
 		if (HasCommandPrefix(params, "swat"))
 		{
 			SetPlayerHealth(playerid, 100.0);
@@ -5591,6 +6966,73 @@ public bool:HandleLspdCommand(playerid, const cmd[], const params[])
 		GivePlayerWeapon(playerid, 22, 120);
 		SetPlayerColor(playerid, 0x3399FFFF);
 		SendClientMessage(playerid, -1, "LSPD equipment issued.");
+		return true;
+	}
+
+	if (!strcmp(cmd, "search", true))
+	{
+		if (!gLspdDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to search.");
+			return true;
+		}
+		new targetId = GetTargetPlayerId(params);
+		if (targetId == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "Usage: /search <player>");
+			return true;
+		}
+		if (GetPlayerDistanceFromPlayer(playerid, targetId) > 4.0)
+		{
+			SendClientMessage(playerid, -1, "Target is too far away.");
+			return true;
+		}
+		new list[256];
+		new found = Law_BuildIllegalListPlayer(targetId, list, sizeof(list));
+		if (found == 0)
+		{
+			SendClientMessage(playerid, -1, "No illegal items found.");
+			LogLawEvent("search_clear", playerid, targetId);
+		}
+		else
+		{
+			ShowPlayerDialog(playerid, 2100, DIALOG_STYLE_MSGBOX, "Illegale Gegenstaende", list, "OK", "");
+			LogLawEvent("search_hit", playerid, targetId, list);
+		}
+		return true;
+	}
+
+	if (!strcmp(cmd, "searchveh", true))
+	{
+		if (!gLspdDuty[playerid])
+		{
+			SendClientMessage(playerid, -1, "You must be on duty to search vehicles.");
+			return true;
+		}
+		new targetId = GetTargetPlayerId(params);
+		if (targetId == INVALID_PLAYER_ID)
+		{
+			SendClientMessage(playerid, -1, "Usage: /searchveh <player>");
+			return true;
+		}
+		new vehicleid = GetPlayerVehicleID(targetId);
+		if (vehicleid == 0)
+		{
+			SendClientMessage(playerid, -1, "Target is not in a vehicle.");
+			return true;
+		}
+		new list[256];
+		new found = Law_BuildIllegalListVehicle(vehicleid, list, sizeof(list));
+		if (found == 0)
+		{
+			SendClientMessage(playerid, -1, "No illegal items found in the vehicle.");
+			LogLawEvent("searchveh_clear", playerid, targetId);
+		}
+		else
+		{
+			ShowPlayerDialog(playerid, 2101, DIALOG_STYLE_MSGBOX, "Illegale Fahrzeugladung", list, "OK", "");
+			LogLawEvent("searchveh_hit", playerid, targetId, list);
+		}
 		return true;
 	}
 
