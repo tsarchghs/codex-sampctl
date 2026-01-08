@@ -4,7 +4,7 @@
 #define _rp_jobs_included
 
 #define JOB_NONE -1
-#define MAX_JOBS 4
+#define MAX_JOBS 5
 #define JOB_XP_PER_LEVEL 100
 #define JOB_MAX_LEVEL 10
 #define JOB_CHECKPOINT_RADIUS 4.0
@@ -19,6 +19,7 @@
 #define JOB_LUMBER 1
 #define JOB_TRUCKER 2
 #define JOB_FISHER 3
+#define JOB_CONSTRUCTOR 4
 
 #define ITEM_PICKAXE 12
 #define ITEM_FISHING_ROD 13
@@ -30,7 +31,7 @@
 enum eJobInfo
 {
 	jobName[32],
-	jobDesc[160],
+	jobDesc[192],
 	Float:jobStartX,
 	Float:jobStartY,
 	Float:jobStartZ,
@@ -43,10 +44,10 @@ new const gJobs[MAX_JOBS][eJobInfo] =
 	{"Bergbau", "Baue Erz ab. Du brauchst eine Spitzhacke. Liefere die Ausbeute ab.", -433.47, 1388.67, 35.39, 0, 350},
 	{"Holzfaeller", "Faelle Holz. Du brauchst Werkzeug. Liefere die Stapel zur Saege.", -532.11, -113.46, 62.00, 0, 320},
 	{"Trucker", "Hole Fracht am Depot und liefere sie ab.", 2234.36, -2212.54, 13.55, 1, 550},
-	{"Fischer", "Fische am Steg. Du brauchst eine Angel. Liefere den Fang ab.", 394.40, -2072.55, 7.83, 0, 300}
+	{"Fischer", "Fische am Steg. Du brauchst eine Angel. Liefere den Fang ab.", 394.40, -2072.55, 7.83, 0, 300},
+	{"Konstrukteur", "Vom Holzfaellen und Schmelzen bis zu Oelpumpen und Fahrzeugbau. Details: docs/konstrukteur.md", 1347.34, -1754.87, 13.55, 2, 600}
 };
 
-new JobPickups[MAX_JOBS];
 new Text3D:JobLabels[MAX_JOBS];
 
 new gJobActive[MAX_PLAYERS];
@@ -91,9 +92,8 @@ stock Job_Init()
 {
 	for (new i = 0; i < MAX_JOBS; i++)
 	{
-		JobPickups[i] = CreatePickup(1239, 1, gJobs[i][jobStartX], gJobs[i][jobStartY], gJobs[i][jobStartZ]);
 		new label[96];
-		format(label, sizeof(label), "[%s]\nArbeitsstart: Marker betreten", gJobs[i][jobName]);
+		format(label, sizeof(label), "[%s]\nTippe /arbeit", gJobs[i][jobName]);
 		JobLabels[i] = Create3DTextLabel(label, 0x4DD0E1FF, gJobs[i][jobStartX], gJobs[i][jobStartY], gJobs[i][jobStartZ] + 0.7, 15.0, 0, 0);
 	}
 	return 1;
@@ -103,11 +103,6 @@ stock Job_Shutdown()
 {
 	for (new i = 0; i < MAX_JOBS; i++)
 	{
-		if (JobPickups[i])
-		{
-			DestroyPickup(JobPickups[i]);
-			JobPickups[i] = 0;
-		}
 		if (JobLabels[i] != Text3D:0)
 		{
 			Delete3DTextLabel(JobLabels[i]);
@@ -403,6 +398,11 @@ stock Job_StartStage(playerid)
 			Job_SetCheckpoint(playerid, gJobs[jobid][jobStartX], gJobs[jobid][jobStartY], gJobs[jobid][jobStartZ]);
 			SendClientMessage(playerid, -1, "Bringe den Fang zum Markt.");
 		}
+		case JOB_CONSTRUCTOR:
+		{
+			SendClientMessage(playerid, -1, "Konstrukteur: Siehe docs/konstrukteur.md fuer Details.");
+			Job_Cancel(playerid, true);
+		}
 	}
 	return 1;
 }
@@ -587,20 +587,6 @@ stock bool:Job_OnDialogResponse(playerid, dialogid, response, listitem, inputtex
 
 stock bool:Job_OnPlayerPickUpPickup(playerid, pickupid)
 {
-	for (new i = 0; i < MAX_JOBS; i++)
-	{
-		if (pickupid == JobPickups[i])
-		{
-			if (!PlayerData[playerid][pLogged])
-			{
-				SendClientMessage(playerid, -1, "Logge dich ein, um zu arbeiten.");
-				return true;
-			}
-			gJobSelected[playerid] = i;
-			Job_ShowInfoDialog(playerid, i);
-			return true;
-		}
-	}
 	return false;
 }
 
@@ -683,6 +669,10 @@ stock bool:Job_OnPlayerEnterCheckpoint(playerid)
 				return true;
 			}
 			Job_Finish(playerid);
+			return true;
+		}
+		case JOB_CONSTRUCTOR:
+		{
 			return true;
 		}
 	}

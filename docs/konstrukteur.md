@@ -1,0 +1,21 @@
+# Konstrukteur
+
+## Aufgaben
+Konstrukteure haben eine sehr umfangreiche Berufung. Vom Faellen von Baeumen und dem Verbrennen derer zu Kohle, ueber das Abbauen und Schmelzen von Erzen, bis hin zur Fertigung und Auslieferung ganzer Fahrzeuge und dem Betreiben von Oelbohrstationen ist hier so ziemlich alles enthalten.
+
+## Fahrzeuge
+Abgesehen von der Auslieferung der produzierten Fahrzeuge, stehen Konstrukteuren keine Dienstfahrzeuge zur Verfuegung.
+
+## How to
+
+### Hochofen
+Um als Konstrukteur arbeiten zu koennen, muss man den Beruf zuvor annehmen. Dies geht beim Jobcenter in der Stadthalle, welche sich ganz in der Naehe vom Los Santos Police Department Hauptrevier und der Memorial Hall befindet. Fuer die volle Vielfalt des Berufes, benoetigt man allerdings einen PKW-Fuehrerschein, welchen man sich bei der Fahrschule im Sunrise Tower kaufen kann. Sobald man den Beruf erfolgreich angenommen hat, muss man sich zum Holzfaeller begeben. Dieser befindet sich westlich des Steinbruchs in Las Venturas. Sollte man diese nicht direkt finden, kann man sich auch manuell ueber den Befehl "/gps" -> "Nebenjob Basis" -> "Holzfaeller" einen roten Marker auf der Karte erstellen. Dort angekommen geht man in die Holzhuette rein und nimmt sich eine Kettensaege, indem man im gelben i-Punkt die Taste "N" drueckt. Mit der laufenden Kettensaege in der Hand stellt man sich nun an einen Baum und faellt ihn. Das hinterlassene Holz auf dem Boden hebt man nun mit der Taste "N" auf und legt es, ebenfalls mit der Taste "N", in einen der Ofen neben der Holzhuette. Nach wenigen Minuten wurde aus dem Holz Holzkohle, welches ihr aus dem Ofen entnehmen koennt. Mit der Kohle in eurem Inventar fahrt ihr nun zu dem anliegenden Steinbruch. Vor dem Haupteingang findet ihr wieder ein i-Punkt, bei dem ihr euch eine Warnweste und Spitzhacke holen koennt. Mit der Ausruestung koennt ihr nun in den Steinbruch hinein gehen und an verschiedenen Orten, wo auch schon andere Arbeiter sich ins Zeug legen, mit der Taste "N" Erze abbauen. Sobald ihr ein Stueck Erz herausgebrochen habt, erscheint ein roter Marker. Wenn ihr diesen durchquert erhaltet ihr in eurem Inventar ein paar Hundert Gramm an Eisen-Erz oder Bauxit-Erz. Ihr koennt jederzeit dieses Erz an einen der Hochoefen, in Kombination mit der Holzkohle, in Metal schmelzen lassen. Nachdem ihr genug Erz eingeschmolzen habt, trennen sich die Wege.
+
+### Eisen
+Wenn ihr mit dem Eisen weiter arbeitet, muesst ihr euch zum Oelfeld, noerdlich von Ford Carson, begeben. Sollte man dies nicht direkt finden, kann man sich auch manuell ueber den Befehl "/gps" -> "Nebenjob Basis" -> "Oelfeld" einen roten Marker auf der Karte erstellen. Dort angekommen geht ihr in den kleinen Container rein und nimmt euch die Oelpumpmaschine aus dem i-Punkt. Dafuer benoetigt ihr allerdings 3.000 Gramm Eisen-Metal. Mit der Oelpumpe in beiden Haenden, geht ihr auf das Oelfeld und platziert diese mit der Taste "N". Nach zehn Minuten hat die Pumpe genug Oel gefoerdert und stellt nun ein gefuelltes Oelfass auf. Dieses sammelt ihr ein und geht damit zur naheliegenden Oelraffinerie auf dem mittleren runden Turm. Oben angekommen koennt ihr mit der Taste "N" euer Oel verkaufen, sofern ihr mindestens fuenf Liter an Oel mit euch tragt. Es erscheint nun eine kleine Box unten rechts, in der euer verdientes Geld gezeigt wird.
+
+### Bauxit
+Wenn ihr mit dem verarbeiteten Bauxit, auch Aluminium genannt, weiter arbeitet, muesst ihr euch zur Autofabrik begeben. Solltet ihr diese nicht direkt finden, kann man sich auch manuell ueber den Befehl "/gps" -> "Nebenjob Basis" -> "Autofabrik" einen roten Marker auf der Karte erstellen. An der Fabrik koennt ihr euer Aluminium in ein Fahrzeug umwandeln. Dafuer benoetigt ihr allerdings 10.000 Gramm Aluminium. Das frisch hergestellte Auto gilt es dann zum Ziel in Los Santos, moeglichst ohne das Auto zu beschaedigen, zu bringen. Wo ihr genau hinfahren muesst, wird euch durch den roten Marker auf der Karte angezeigt. Am Ziel angekommen, erhaltet ihr unten rechts eine Box, wo euer verdientes Geld angezeigt wird.
+
+## Verdienst
+Pro fuenf Liter Oel erhaltet ihr ungefaehr $15.000 und pro unbeschaedigtes Fahrzeug erhaltet ihr ungefaehr $20.000 am Payday.
