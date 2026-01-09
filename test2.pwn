@@ -87,7 +87,6 @@
 
 #define TELEPORT_RADIUS 1.5
 #define TELEPORT_COOLDOWN_MS 1500
-#define TELEPORT_PICKUP_MODEL 1318
 #define TELEPORT_LABEL_DISTANCE 15.0
 
 #define TAXI_DEFAULT_FARE 10
@@ -152,7 +151,6 @@ new const gPetNames[][] =
 };
 
 new gStorePrices[MAX_ITEMS];
-new FishingVendorPickup;
 new Text3D:FishingVendorLabel;
 
 #define MAX_BUSINESSES 6
@@ -165,13 +163,25 @@ new Text3D:FishingVendorLabel;
 #define COMPONENT_WAREHOUSE_Y -2265.4827
 #define COMPONENT_WAREHOUSE_Z 13.3047
 
-new BusinessPickups[MAX_BUSINESSES];
 new Text3D:BusinessLabels[MAX_BUSINESSES];
-new WarehousePickup;
+new Text3D:WarehouseLabel;
 new bool:gCheckpointActive[MAX_PLAYERS];
 new Float:gCheckpointX[MAX_PLAYERS];
 new Float:gCheckpointY[MAX_PLAYERS];
 new Float:gCheckpointZ[MAX_PLAYERS];
+new Text3D:GarageLabel;
+new Text3D:ChopLabel;
+new const gAmmuWeaponIds[] = {22, 25, 28, 29, 31};
+new const gAmmuWeaponPrices[] = {600, 1800, 3500, 4800, 7500};
+new const gAmmuWeaponAmmo[] = {80, 25, 150, 200, 220};
+new const gAmmuWeaponNames[][] =
+{
+	"9mm",
+	"Shotgun",
+	"Uzi",
+	"MP5",
+	"M4"
+};
 
 enum BusinessType
 {
@@ -1386,12 +1396,6 @@ enum eTeleport
 	tExit
 };
 
-enum eTeleportPickup
-{
-	pEntry,
-	pExit
-};
-
 new const gTeleports[][eTeleport][eTeleportPoint] =
 {
 	{
@@ -1408,8 +1412,7 @@ new const gTeleports[][eTeleport][eTeleportPoint] =
 	}
 };
 
-new gTeleportPickups[sizeof(gTeleports)][eTeleportPickup];
-new Text3D:gTeleportLabels[sizeof(gTeleports)][eTeleportPickup];
+new Text3D:gTeleportLabels[sizeof(gTeleports)][eTeleport];
 
 stock ResetPlayerData(playerid)
 {
@@ -3304,24 +3307,7 @@ stock CreatePropertyTeleports()
 {
 	for (new i = 0; i < sizeof(gTeleports); i++)
 	{
-		gTeleportPickups[i][pEntry] = CreatePickup(
-			TELEPORT_PICKUP_MODEL,
-			1,
-			gTeleports[i][tEntry][tX],
-			gTeleports[i][tEntry][tY],
-			gTeleports[i][tEntry][tZ],
-			gTeleports[i][tEntry][tWorld]
-		);
-		gTeleportPickups[i][pExit] = CreatePickup(
-			TELEPORT_PICKUP_MODEL,
-			1,
-			gTeleports[i][tExit][tX],
-			gTeleports[i][tExit][tY],
-			gTeleports[i][tExit][tZ],
-			gTeleports[i][tExit][tWorld]
-		);
-
-		gTeleportLabels[i][pEntry] = _:Create3DTextLabel(
+		gTeleportLabels[i][tEntry] = _:Create3DTextLabel(
 			"Property Entrance\nUse /enter.",
 			0xFFFFFFFF,
 			gTeleports[i][tEntry][tX],
@@ -3331,7 +3317,7 @@ stock CreatePropertyTeleports()
 			0,
 			gTeleports[i][tEntry][tWorld]
 		);
-		gTeleportLabels[i][pExit] = _:Create3DTextLabel(
+		gTeleportLabels[i][tExit] = _:Create3DTextLabel(
 			"Property Exit\nUse /exit.",
 			0xFFFFFFFF,
 			gTeleports[i][tExit][tX],
@@ -3349,26 +3335,15 @@ stock DestroyPropertyTeleports()
 {
 	for (new i = 0; i < sizeof(gTeleports); i++)
 	{
-		if (gTeleportPickups[i][pEntry] != 0)
+		if (Text3D:gTeleportLabels[i][tEntry] != Text3D:0)
 		{
-			DestroyPickup(gTeleportPickups[i][pEntry]);
-			gTeleportPickups[i][pEntry] = 0;
+			Delete3DTextLabel(Text3D:gTeleportLabels[i][tEntry]);
+			gTeleportLabels[i][tEntry] = 0;
 		}
-		if (gTeleportPickups[i][pExit] != 0)
+		if (Text3D:gTeleportLabels[i][tExit] != Text3D:0)
 		{
-			DestroyPickup(gTeleportPickups[i][pExit]);
-			gTeleportPickups[i][pExit] = 0;
-		}
-
-		if (Text3D:gTeleportLabels[i][pEntry] != Text3D:0)
-		{
-			Delete3DTextLabel(Text3D:gTeleportLabels[i][pEntry]);
-			gTeleportLabels[i][pEntry] = 0;
-		}
-		if (Text3D:gTeleportLabels[i][pExit] != Text3D:0)
-		{
-			Delete3DTextLabel(Text3D:gTeleportLabels[i][pExit]);
-			gTeleportLabels[i][pExit] = 0;
+			Delete3DTextLabel(Text3D:gTeleportLabels[i][tExit]);
+			gTeleportLabels[i][tExit] = 0;
 		}
 	}
 	return 1;
@@ -3410,6 +3385,7 @@ public OnGameModeInit()
 {
 	SetGameModeText("MySQL Accounts");
 	UsePlayerPedAnims();
+	DisableInteriorEnterExits();
 	gStolenPlateCount = 0;
 	for (new i = 0; i < MAX_ITEMS; i++)
 	{
@@ -3450,13 +3426,11 @@ public OnGameModeInit()
 		BusinessData[i][bComponents] = BUSINESS_COMPONENTS_DEFAULT;
 		BusinessData[i][bComponentPrice] = 750;
 		BusinessData[i][bEarnings] = 0;
-		BusinessPickups[i] = CreatePickup(1274, 1, BusinessData[i][bX], BusinessData[i][bY], BusinessData[i][bZ]);
 		UpdateBusinessLabel(i);
 	}
 
-	WarehousePickup = CreatePickup(1239, 1, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z);
+	WarehouseLabel = Create3DTextLabel("Warenlager\nTippe /buycrates", 0x67B7FFFF, COMPONENT_WAREHOUSE_X, COMPONENT_WAREHOUSE_Y, COMPONENT_WAREHOUSE_Z + 0.7, 15.0, 0, 0);
 	CreatePropertyTeleports();
-	FishingVendorPickup = CreatePickup(1239, 1, FISH_VENDOR_X, FISH_VENDOR_Y, FISH_VENDOR_Z);
 	FishingVendorLabel = Create3DTextLabel("Angel-Verkauf\nTippe /buyrod", 0x67B7FFFF, FISH_VENDOR_X, FISH_VENDOR_Y, FISH_VENDOR_Z + 0.7, 15.0, 0, 0);
 
 	for (new i = 0; i < sizeof(gSkinList); i++)
@@ -3464,8 +3438,8 @@ public OnGameModeInit()
 		AddPlayerClass(gSkinList[i], PREVIEW_X, PREVIEW_Y, PREVIEW_Z, PREVIEW_A, 0, 0, 0, 0, 0, 0);
 	}
 
-	CreatePickup(1239, 1, GARAGE_X, GARAGE_Y, GARAGE_Z, 0);
-	CreatePickup(1239, 1, CHOP_X, CHOP_Y, CHOP_Z, 0);
+	GarageLabel = Create3DTextLabel("Garage\nTippe /garage", 0x67B7FFFF, GARAGE_X, GARAGE_Y, GARAGE_Z + 0.7, 15.0, 0, 0);
+	ChopLabel = Create3DTextLabel("Chop-Shop\nTippe /chop", 0x67B7FFFF, CHOP_X, CHOP_Y, CHOP_Z + 0.7, 15.0, 0, 0);
 
 	new vehicleid = CreateVehicle(411, PREVIEW_X + 6.0, PREVIEW_Y + 4.0, PREVIEW_Z, 0.0, 0, 0, -1);
 	InitVehiclePlate(vehicleid);
@@ -3538,26 +3512,28 @@ public OnGameModeExit()
 	{
 		mysql_close(g_SQL);
 	}
-	if (WarehousePickup)
+	if (WarehouseLabel != Text3D:0)
 	{
-		DestroyPickup(WarehousePickup);
-	}
-	if (FishingVendorPickup)
-	{
-		DestroyPickup(FishingVendorPickup);
-		FishingVendorPickup = 0;
+		Delete3DTextLabel(WarehouseLabel);
+		WarehouseLabel = Text3D:0;
 	}
 	if (FishingVendorLabel != Text3D:0)
 	{
 		Delete3DTextLabel(FishingVendorLabel);
 		FishingVendorLabel = Text3D:0;
 	}
+	if (GarageLabel != Text3D:0)
+	{
+		Delete3DTextLabel(GarageLabel);
+		GarageLabel = Text3D:0;
+	}
+	if (ChopLabel != Text3D:0)
+	{
+		Delete3DTextLabel(ChopLabel);
+		ChopLabel = Text3D:0;
+	}
 	for (new i = 0; i < MAX_BUSINESSES; i++)
 	{
-		if (BusinessPickups[i])
-		{
-			DestroyPickup(BusinessPickups[i]);
-		}
 		if (BusinessLabels[i] != Text3D:0)
 		{
 			Delete3DTextLabel(BusinessLabels[i]);
@@ -4356,25 +4332,6 @@ public OnPlayerPickUpPickup(playerid, pickupid)
 	if (Job_OnPlayerPickUpPickup(playerid, pickupid))
 	{
 		return 1;
-	}
-	if (pickupid == FishingVendorPickup)
-	{
-		SendClientMessage(playerid, -1, "Angel-Verkauf: Nutze /buyrod oder /buyitem 13 1.");
-		return 1;
-	}
-	if (pickupid == WarehousePickup)
-	{
-		SendClientMessage(playerid, -1, "Component warehouse: use /buycrates [count] to buy crates.");
-		return 1;
-	}
-
-	for (new i = 0; i < MAX_BUSINESSES; i++)
-	{
-		if (pickupid == BusinessPickups[i])
-		{
-			ShowBusinessStatus(playerid, i);
-			return 1;
-		}
 	}
 	return 0;
 }
@@ -6243,6 +6200,58 @@ public OnPlayerCommandText(playerid, cmdtext[])
 			new msg[96];
 			format(msg, sizeof(msg), "Gekauft: %s x%d fuer $%d.", itemName, count, cost);
 			SendClientMessage(playerid, -1, msg);
+			return 1;
+		}
+
+		if (BusinessData[businessId][bType] == BUSINESS_AMMUNATION)
+		{
+			new itemToken[16];
+			GetCommandToken(cmdtext, idx, itemToken, sizeof(itemToken));
+			if (itemToken[0] == '\0')
+			{
+				SendClientMessage(playerid, -1, "Waffenliste: /buyitem 1-5 [packs]");
+				SendClientMessage(playerid, -1, "1=9mm ($600/80 Schuss), 2=Shotgun ($1800/25), 3=Uzi ($3500/150)");
+				SendClientMessage(playerid, -1, "4=MP5 ($4800/200), 5=M4 ($7500/220)");
+				return 1;
+			}
+			new itemIndex = strval(itemToken) - 1;
+			if (itemIndex < 0 || itemIndex >= sizeof(gAmmuWeaponIds))
+			{
+				SendClientMessage(playerid, -1, "Ungueltige Waffe. Nutze /buyitem 1-5 [packs].");
+				return 1;
+			}
+			new countToken[16];
+			GetCommandToken(cmdtext, idx, countToken, sizeof(countToken));
+			new count = strval(countToken);
+			if (count < 1)
+			{
+				count = 1;
+			}
+			if (BusinessData[businessId][bComponents] < count)
+			{
+				SendClientMessage(playerid, -1, "Der Laden hat nicht genug Ware.");
+				return 1;
+			}
+			new cost = gAmmuWeaponPrices[itemIndex] * count;
+			if (GetPlayerMoney(playerid) < cost)
+			{
+				SendClientMessage(playerid, -1, "Du hast nicht genug Geld.");
+				return 1;
+			}
+			GivePlayerMoneyLogged(playerid, -cost, "ammu_buy");
+			BusinessData[businessId][bComponents] -= count;
+			GivePlayerWeapon(playerid, gAmmuWeaponIds[itemIndex], gAmmuWeaponAmmo[itemIndex] * count);
+			new owner = BusinessData[businessId][bOwner];
+			if (owner != INVALID_PLAYER_ID && IsPlayerConnected(owner))
+			{
+				new payout = cost / 2;
+				Economy_Payout(owner, payout, "biz_sale");
+				BusinessData[businessId][bEarnings] += payout;
+			}
+			new msg[96];
+			format(msg, sizeof(msg), "Gekauft: %s x%d fuer $%d.", gAmmuWeaponNames[itemIndex], count, cost);
+			SendClientMessage(playerid, -1, msg);
+			UpdateBusinessLabel(businessId);
 			return 1;
 		}
 
