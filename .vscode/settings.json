@@ -1,0 +1,8 @@
+{
+  "pawn.compiler.includePath": [
+    "${workspaceFolder}\\include"
+  ],
+  "sampctl.includePaths": [
+    "${workspaceFolder}\\include"
+  ]
+}

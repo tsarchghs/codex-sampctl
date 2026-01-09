@@ -2798,6 +2798,7 @@ stock Law_LogRecord(officerid, targetid, const event[], const detail[])
 #include "include/rp_jobs.inc"
 #include "include/rp_factions.inc"
 #include "include/rp_map.inc"
+#include "tests/konstruktor_tests.pwn"
 
 stock ShowStatusDialog(playerid)
 {
@@ -3431,6 +3432,18 @@ public OnGameModeInit()
 	SetTimer("FactionSalaryTick", FACTION_SALARY_TICK_MS, true);
 	SetTimer("CrimeTick", 60000, true);
 	SetTimer("AutoSaveTick", AUTO_SAVE_INTERVAL_MS, true);
+
+	// Auto-run konstruktor tests if trigger file exists
+	new testTriggerPath[64];
+	format(testTriggerPath, sizeof(testTriggerPath), "tests/run_konstruktor_tests");
+	new File:h = fopen(testTriggerPath, io_read);
+	if (h != 0)
+	{
+		fclose(h);
+		printf("[TEST] Found trigger file; running konstruktor tests...");
+		RunKonstruktorTests();
+	}
+
 	for (new i = 0; i < MAX_DROPS; i++)
 	{
 		Drops[i][dropActive] = false;
@@ -5150,6 +5163,216 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		return 1;
 	}
 
+	if (!strcmp(cmd, "/tpkonstructor", true) || !strcmp(cmd, "/tpkonstrukteur", true) || !strcmp(cmd, "/tpconstructor", true) || !strcmp(cmd, "/tpkon", true))
+	{
+		new arg[64];
+		arg = strtok(cmdtext, idx);
+		if (!strlen(arg))
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /tpkonstructor <start|hut|oven|quarry|smelter|oil|refinery|factory|lumber1-3|miner1-3|oil1-3|veh1-3>");
+			return 1;
+		}
+		new Float:x, Float:y, Float:z;
+		new bool:found = true;
+		if (!strcmp(arg, "start", true))
+		{
+			x = gConstructorStart[0];
+			y = gConstructorStart[1];
+			z = gConstructorStart[2];
+		}
+		else if (!strcmp(arg, "hut", true))
+		{
+			x = gConstructorLumberHut[0];
+			y = gConstructorLumberHut[1];
+			z = gConstructorLumberHut[2];
+		}
+		else if (!strcmp(arg, "oven", true))
+		{
+			x = gConstructorCharcoalOven[0];
+			y = gConstructorCharcoalOven[1];
+			z = gConstructorCharcoalOven[2];
+		}
+		else if (!strcmp(arg, "quarry", true))
+		{
+			x = gConstructorQuarryGear[0];
+			y = gConstructorQuarryGear[1];
+			z = gConstructorQuarryGear[2];
+		}
+		else if (!strcmp(arg, "smelter", true))
+		{
+			x = gConstructorSmelter[0];
+			y = gConstructorSmelter[1];
+			z = gConstructorSmelter[2];
+		}
+		else if (!strcmp(arg, "oil", true))
+		{
+			x = gConstructorOilContainer[0];
+			y = gConstructorOilContainer[1];
+			z = gConstructorOilContainer[2];
+		}
+		else if (!strcmp(arg, "refinery", true))
+		{
+			x = gConstructorRefinery[0];
+			y = gConstructorRefinery[1];
+			z = gConstructorRefinery[2];
+		}
+		else if (!strcmp(arg, "factory", true))
+		{
+			x = gConstructorFactory[0];
+			y = gConstructorFactory[1];
+			z = gConstructorFactory[2];
+		}
+		else if (!strcmp(arg, "lumber1", true))
+		{
+			x = gLumberSpots[0][0];
+			y = gLumberSpots[0][1];
+			z = gLumberSpots[0][2];
+		}
+		else if (!strcmp(arg, "lumber2", true))
+		{
+			x = gLumberSpots[1][0];
+			y = gLumberSpots[1][1];
+			z = gLumberSpots[1][2];
+		}
+		else if (!strcmp(arg, "lumber3", true))
+		{
+			x = gLumberSpots[2][0];
+			y = gLumberSpots[2][1];
+			z = gLumberSpots[2][2];
+		}
+		else if (!strcmp(arg, "miner1", true))
+		{
+			x = gMinerSpots[0][0];
+			y = gMinerSpots[0][1];
+			z = gMinerSpots[0][2];
+		}
+		else if (!strcmp(arg, "miner2", true))
+		{
+			x = gMinerSpots[1][0];
+			y = gMinerSpots[1][1];
+			z = gMinerSpots[1][2];
+		}
+		else if (!strcmp(arg, "miner3", true))
+		{
+			x = gMinerSpots[2][0];
+			y = gMinerSpots[2][1];
+			z = gMinerSpots[2][2];
+		}
+		else if (!strcmp(arg, "oil1", true))
+		{
+			x = gConstructorOilSpots[0][0];
+			y = gConstructorOilSpots[0][1];
+			z = gConstructorOilSpots[0][2];
+		}
+		else if (!strcmp(arg, "oil2", true))
+		{
+			x = gConstructorOilSpots[1][0];
+			y = gConstructorOilSpots[1][1];
+			z = gConstructorOilSpots[1][2];
+		}
+		else if (!strcmp(arg, "oil3", true))
+		{
+			x = gConstructorOilSpots[2][0];
+			y = gConstructorOilSpots[2][1];
+			z = gConstructorOilSpots[2][2];
+		}
+		else if (!strcmp(arg, "veh1", true))
+		{
+			x = gConstructorVehicleDrops[0][0];
+			y = gConstructorVehicleDrops[0][1];
+			z = gConstructorVehicleDrops[0][2];
+		}
+		else if (!strcmp(arg, "veh2", true))
+		{
+			x = gConstructorVehicleDrops[1][0];
+			y = gConstructorVehicleDrops[1][1];
+			z = gConstructorVehicleDrops[1][2];
+		}
+		else if (!strcmp(arg, "veh3", true))
+		{
+			x = gConstructorVehicleDrops[2][0];
+			y = gConstructorVehicleDrops[2][1];
+			z = gConstructorVehicleDrops[2][2];
+		}
+		else
+		{
+			found = false;
+		}
+		if (!found)
+		{
+			SendClientMessage(playerid, -1, "Unbekanntes Ziel. Beispiel: /tpkonstructor start");
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid != 0)
+		{
+			new Float:a;
+			GetVehicleZAngle(vehicleid, a);
+			SetVehiclePos(vehicleid, x, y, z + 0.5);
+			SetVehicleZAngle(vehicleid, a);
+		}
+		else
+		{
+			SetPlayerPos(playerid, x, y, z);
+		}
+		SendClientMessage(playerid, -1, "Teleportiert zum Konstrukteur-Punkt.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/startconstructor", true) || !strcmp(cmd, "/startkonstrukteur", true))
+	{
+		if (gJobActive[playerid] != JOB_NONE)
+		{
+			Job_Cancel(playerid, true);
+		}
+		gJobActive[playerid] = JOB_CONSTRUCTOR;
+		gJobStage[playerid] = 0;
+		gJobTarget[playerid] = -1;
+		gJobSelected[playerid] = JOB_CONSTRUCTOR;
+		gConstructorBranch[playerid] = CONSTRUCTOR_BRANCH_NONE;
+		gConstructorPumpReadyTick[playerid] = 0;
+		gConstructorPumpPlaced[playerid] = false;
+		Job_StartStage(playerid);
+		SendClientMessage(playerid, -1, "Konstrukteur gestartet. Folge dem Marker und druecke N.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/jobstage", true) || !strcmp(cmd, "/konstage", true))
+	{
+		new stageArg[64];
+		stageArg = strtok(cmdtext, idx);
+		if (!strlen(stageArg))
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /jobstage <0-12>");
+			return 1;
+		}
+		new stage = strval(stageArg);
+		if (stage < 0 || stage > 12)
+		{
+			SendClientMessage(playerid, -1, "Stage muss zwischen 0 und 12 liegen.");
+			return 1;
+		}
+		if (gJobActive[playerid] != JOB_CONSTRUCTOR)
+		{
+			gJobActive[playerid] = JOB_CONSTRUCTOR;
+			gConstructorBranch[playerid] = CONSTRUCTOR_BRANCH_NONE;
+			gConstructorPumpReadyTick[playerid] = 0;
+			gConstructorPumpPlaced[playerid] = false;
+		}
+		gJobStage[playerid] = stage;
+		gJobTarget[playerid] = -1;
+		if (stage == 6)
+		{
+			ShowPlayerDialog(playerid, DIALOG_CONSTRUCTOR_BRANCH, DIALOG_STYLE_LIST, "Konstrukteur", "Oel\nFahrzeug", "Waehlen", "Abbrechen");
+		}
+		else
+		{
+			Job_StartStage(playerid);
+		}
+		SendClientMessage(playerid, -1, "Konstrukteur-Stage gesetzt.");
+		return 1;
+	}
+
 	if (!strcmp(cmd, "/stats", true))
 	{
 		new msg[144];
@@ -5362,7 +5585,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 
 	if (!strcmp(cmd, "/item", true))
 	{
-		new slotArg[16];
+		new slotArg[64];
 		slotArg = strtok(cmdtext, idx);
 		new slot = strval(slotArg);
 		if (slot < 1 || slot > MAX_ITEM_SHORTCUTS)
@@ -6824,6 +7047,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 				TaxiRentalVehicle[playerid] = CreateVehicle(420, x + 2.0, y, z, a, -1, -1, 0);
 				InitVehiclePlate(TaxiRentalVehicle[playerid]);
 				PutPlayerInVehicle(playerid, TaxiRentalVehicle[playerid], 0);
+				
 			}
 			new message[64];
 			format(message, sizeof(message), "Taxi rented for %d minutes. Cost: $%d.", TAXI_RENTAL_MINUTES, TAXI_RENTAL_COST);

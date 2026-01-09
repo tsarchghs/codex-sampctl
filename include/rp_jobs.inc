@@ -15,6 +15,7 @@
 #define DIALOG_JOB_INFO 2001
 #define DIALOG_JOB_QUIT 2002
 #define DIALOG_CONSTRUCTOR_BRANCH 2003
+#define DIALOG_CONSTRUCTOR_INFO 2004
 
 #define JOB_MINER 0
 #define JOB_LUMBER 1
@@ -32,8 +33,33 @@
 #define ITEM_IRON_INGOT 22
 #define ITEM_BAUXITE_INGOT 23
 #define ITEM_OIL_BARREL 24
+#define ITEM_BAUXITE_ORE 18
 
 #define CONSTRUCTOR_PUMP_TIME_MS (10 * 60 * 1000)
+#define CONSTRUCTOR_CHARCOAL_TIME_MS (5 * 60 * 1000)
+#define CONSTRUCTOR_SMELTER_TIME_MS (10 * 1000)
+#define CONSTRUCTOR_STAGE_COUNT 13
+#define CONSTRUCTOR_STAGE_COOLDOWN_MS 1500
+#define CONSTRUCTOR_STAGE_ICON 56
+#define CONSTRUCTOR_PUMP_MODEL 1676
+#define CONSTRUCTOR_PROP_CRATE 1271
+#define CONSTRUCTOR_PROP_BARREL 1225
+#define CONSTRUCTOR_PROP_TOOLBOX 1210
+#define CONSTRUCTOR_PROP_PIPE 3576
+#define CONSTRUCTOR_PROP_WOOD 1463
+#define CONSTRUCTOR_PROP_ANVIL 1369
+#define CONSTRUCTOR_PROP_OIL 1650
+#define CONSTRUCTOR_PROP_FACTORY 18257
+
+#define CONSTRUCTOR_LABEL_MAIN 0
+#define CONSTRUCTOR_LABEL_HUT 1
+#define CONSTRUCTOR_LABEL_OVEN 2
+#define CONSTRUCTOR_LABEL_QUARRY 3
+#define CONSTRUCTOR_LABEL_SMELTER 4
+#define CONSTRUCTOR_LABEL_OIL_CONTAINER 5
+#define CONSTRUCTOR_LABEL_REFINERY 6
+#define CONSTRUCTOR_LABEL_FACTORY 7
+#define CONSTRUCTOR_LABEL_COUNT 8
 
 #define CONSTRUCTOR_BRANCH_NONE 0
 #define CONSTRUCTOR_BRANCH_OIL 1
@@ -125,6 +151,494 @@ new gConstructorBranch[MAX_PLAYERS];
 new gConstructorPumpReadyTick[MAX_PLAYERS];
 new bool:gConstructorPumpPlaced[MAX_PLAYERS];
 new gConstructorVehicle[MAX_PLAYERS];
+new gConstructorActionTick[MAX_PLAYERS];
+new gConstructorPumpObject[MAX_PLAYERS];
+new gConstructorMapIconActive[MAX_PLAYERS];
+new Text3D:gConstructorLabels[CONSTRUCTOR_LABEL_COUNT];
+new Text3D:gConstructorLumberLabels[sizeof(gLumberSpots)];
+new Text3D:gConstructorMinerLabels[sizeof(gMinerSpots)];
+new Text3D:gConstructorOilLabels[sizeof(gConstructorOilSpots)];
+new Text3D:gConstructorVehicleLabels[sizeof(gConstructorVehicleDrops)];
+new gConstructorProps[24];
+new gConstructorActors[4];
+// Visual cart attached to player when mining
+new gConstructorCart[MAX_PLAYERS];
+// Cable car pickups and destinations
+new gConstructorCablePickupTop;
+new gConstructorCablePickupBottom;
+new Float:gConstructorCableDestX[MAX_PLAYERS];
+new Float:gConstructorCableDestY[MAX_PLAYERS];
+new Float:gConstructorCableDestZ[MAX_PLAYERS];
+// Ban timer (ms since epoch) preventing construction work
+new gConstructorBannedUntil[MAX_PLAYERS];
+// Guiding mode toggle per player (show step-by-step hints)
+new gGuidedMode[MAX_PLAYERS];
+// Shared processing stations (not player-bound): charcoal oven and smelter
+new bool:gCharcoalOvenOccupied;
+new gCharcoalOvenReadyTick;
+new bool:gSmelterOccupied;
+new gSmelterReadyTick;
+new gSmelterProduct;
+
+new const gConstructorStageNames[CONSTRUCTOR_STAGE_COUNT][32] =
+{
+	"Werkzeug holen",
+	"Holz faellen",
+	"Kohle brennen",
+	"Grubenausruestung",
+	"Erz abbauen",
+	"Schmelzen",
+	"Weg waehlen",
+	"Oelpumpe holen",
+	"Oelpumpe platzieren",
+	"Oel einsammeln",
+	"Oel liefern",
+	"Fahrzeug bauen",
+	"Fahrzeug liefern"
+};
+
+new const gConstructorStageHints[CONSTRUCTOR_STAGE_COUNT][96] =
+{
+	"Hol dir Werkzeug an der Huette.",
+	"Faelle Holz an der Markierung.",
+	"Brenne Holz zu Kohle.",
+	"Hol dir die Grubenausruestung.",
+	"Baue Erz an der Markierung ab.",
+	"Schmelze Erz und Kohle.",
+	"Waehle Oel oder Fahrzeug.",
+	"Hol dir eine Oelpumpe.",
+	"Platziere die Pumpe im Oelfeld.",
+	"Warte und sammle Oel ein.",
+	"Bringe das Oel zur Raffinerie.",
+	"Baue ein Fahrzeug in der Fabrik.",
+	"Liefere das Fahrzeug nach Los Santos."
+};
+
+stock Constructor_SetMapIcon(playerid, Float:x, Float:y, Float:z)
+{
+	SetPlayerMapIcon(playerid, CONSTRUCTOR_STAGE_ICON, x, y, z, 56, 0);
+	gConstructorMapIconActive[playerid] = 1;
+	return 1;
+}
+
+stock Constructor_ClearMapIcon(playerid)
+{
+	if (gConstructorMapIconActive[playerid] != 0)
+	{
+		RemovePlayerMapIcon(playerid, CONSTRUCTOR_STAGE_ICON);
+		gConstructorMapIconActive[playerid] = 0;
+	}
+	return 1;
+}
+
+stock Constructor_ShowStageHint(playerid, stage)
+{
+	if (stage < 0 || stage >= CONSTRUCTOR_STAGE_COUNT)
+	{
+		return 0;
+	}
+	new hint[128];
+	format(hint, sizeof(hint), "~w~Konstrukteur~n~~y~%s~n~~w~%s", gConstructorStageNames[stage], gConstructorStageHints[stage]);
+	GameTextForPlayer(playerid, hint, 4000, 3);
+	return 1;
+}
+
+stock ShowConstructorHintIfGuided(playerid)
+{
+	if (gGuidedMode[playerid]) Constructor_ShowStageHint(playerid, gJobStage[playerid]);
+	return 1;
+}
+
+stock Constructor_AwardStage(playerid, stage)
+{
+	new payout = 0;
+	new xp = 0;
+	switch (stage)
+	{
+		case 0: { payout = 150; xp = 10; break; }
+		case 1: { payout = 250; xp = 15; break; }
+		case 2: { payout = 250; xp = 15; break; }
+		case 3: { payout = 150; xp = 10; break; }
+		case 4: { payout = 300; xp = 20; break; }
+		case 5: { payout = 400; xp = 25; break; }
+		case 6: { /* choice stage: no direct award */ break; }
+		case 7: { payout = 500; xp = 30; break; }
+		case 8: { payout = 600; xp = 30; break; }
+		case 9: { payout = 700; xp = 35; break; }
+		case 10: { /* oil delivery handled separately */ break; }
+		case 11: { payout = 800; xp = 40; break; }
+		case 12: { payout = 1000; xp = 50; break; }
+		default: break;
+	}
+	if (payout > 0)
+	{
+		Economy_Payout(playerid, payout, "constructor_stage");
+	}
+	if (xp > 0)
+	{
+		Job_AddXP(playerid, JOB_CONSTRUCTOR, xp);
+	}
+	return 1;
+}
+
+stock bool:Constructor_ThrottleAction(playerid)
+{
+	new now = GetTickCount();
+	if (now < gConstructorActionTick[playerid])
+	{
+		SendClientMessage(playerid, -1, "Warte kurz, bevor du das erneut machst.");
+		return true;
+	}
+	gConstructorActionTick[playerid] = now + CONSTRUCTOR_STAGE_COOLDOWN_MS;
+	return false;
+}
+
+stock Constructor_CreateProps()
+{
+	for (new i = 0; i < sizeof(gConstructorProps); i++)
+	{
+		gConstructorProps[i] = INVALID_OBJECT_ID;
+	}
+	gConstructorProps[0] = CreateObject(CONSTRUCTOR_PROP_WOOD, gConstructorLumberHut[0] + 1.2, gConstructorLumberHut[1], gConstructorLumberHut[2] - 0.9, 0.0, 0.0, 90.0);
+	gConstructorProps[1] = CreateObject(CONSTRUCTOR_PROP_TOOLBOX, gConstructorLumberHut[0] - 0.8, gConstructorLumberHut[1] + 0.6, gConstructorLumberHut[2] - 0.9, 0.0, 0.0, 45.0);
+	gConstructorProps[2] = CreateObject(CONSTRUCTOR_PROP_BARREL, gConstructorCharcoalOven[0], gConstructorCharcoalOven[1] + 0.8, gConstructorCharcoalOven[2] - 0.7, 0.0, 0.0, 180.0);
+	gConstructorProps[3] = CreateObject(CONSTRUCTOR_PROP_CRATE, gConstructorCharcoalOven[0] + 1.2, gConstructorCharcoalOven[1] - 0.4, gConstructorCharcoalOven[2] - 0.9, 0.0, 0.0, 10.0);
+	gConstructorProps[4] = CreateObject(CONSTRUCTOR_PROP_CRATE, gConstructorQuarryGear[0] + 0.8, gConstructorQuarryGear[1] - 0.8, gConstructorQuarryGear[2] - 0.9, 0.0, 0.0, 270.0);
+	gConstructorProps[5] = CreateObject(CONSTRUCTOR_PROP_PIPE, gConstructorQuarryGear[0] - 0.6, gConstructorQuarryGear[1] + 0.4, gConstructorQuarryGear[2] - 0.8, 0.0, 0.0, 0.0);
+	gConstructorProps[6] = CreateObject(CONSTRUCTOR_PROP_ANVIL, gConstructorSmelter[0] + 1.1, gConstructorSmelter[1] + 0.4, gConstructorSmelter[2] - 0.8, 0.0, 0.0, 30.0);
+	gConstructorProps[7] = CreateObject(CONSTRUCTOR_PROP_CRATE, gConstructorSmelter[0] - 1.0, gConstructorSmelter[1] - 0.3, gConstructorSmelter[2] - 0.9, 0.0, 0.0, 210.0);
+	gConstructorProps[8] = CreateObject(CONSTRUCTOR_PROP_OIL, gConstructorOilContainer[0] + 0.5, gConstructorOilContainer[1] - 0.6, gConstructorOilContainer[2] - 0.9, 0.0, 0.0, 90.0);
+	gConstructorProps[9] = CreateObject(CONSTRUCTOR_PROP_BARREL, gConstructorOilContainer[0] - 0.7, gConstructorOilContainer[1] + 0.3, gConstructorOilContainer[2] - 0.7, 0.0, 0.0, 0.0);
+	gConstructorProps[10] = CreateObject(CONSTRUCTOR_PROP_FACTORY, gConstructorFactory[0] + 3.0, gConstructorFactory[1], gConstructorFactory[2] - 0.8, 0.0, 0.0, 270.0);
+	gConstructorProps[11] = CreateObject(CONSTRUCTOR_PROP_CRATE, gConstructorFactory[0] - 2.0, gConstructorFactory[1] + 1.0, gConstructorFactory[2] - 0.9, 0.0, 0.0, 60.0);
+	return 1;
+}
+
+stock Constructor_DestroyProps()
+{
+	for (new i = 0; i < sizeof(gConstructorProps); i++)
+	{
+		if (gConstructorProps[i] != INVALID_OBJECT_ID)
+		{
+			DestroyObject(gConstructorProps[i]);
+			gConstructorProps[i] = INVALID_OBJECT_ID;
+		}
+	}
+	return 1;
+}
+
+stock Constructor_CreateActors()
+{
+	for (new i = 0; i < sizeof(gConstructorActors); i++)
+	{
+		gConstructorActors[i] = INVALID_ACTOR_ID;
+	}
+	gConstructorActors[0] = CreateActor(27, gConstructorStart[0] + 1.0, gConstructorStart[1], gConstructorStart[2], 180.0);
+	gConstructorActors[1] = CreateActor(260, gConstructorQuarryGear[0] + 1.0, gConstructorQuarryGear[1] - 1.0, gConstructorQuarryGear[2], 90.0);
+	gConstructorActors[2] = CreateActor(260, gConstructorRefinery[0] + 1.0, gConstructorRefinery[1] - 1.0, gConstructorRefinery[2], 0.0);
+	gConstructorActors[3] = CreateActor(50, gConstructorFactory[0] - 1.0, gConstructorFactory[1], gConstructorFactory[2], 270.0);
+	return 1;
+}
+
+stock Constructor_DestroyActors()
+{
+	for (new i = 0; i < sizeof(gConstructorActors); i++)
+	{
+		if (gConstructorActors[i] != INVALID_ACTOR_ID)
+		{
+			DestroyActor(gConstructorActors[i]);
+			gConstructorActors[i] = INVALID_ACTOR_ID;
+		}
+	}
+	return 1;
+}
+
+// --- Cart visuals and helpers ---
+stock Constructor_CreateCart(playerid)
+{
+	if (gConstructorCart[playerid] != INVALID_OBJECT_ID)
+		return 0;
+	new Float:x, y, z;
+	GetPlayerPos(playerid, x, y, z);
+	gConstructorCart[playerid] = CreateObject(CONSTRUCTOR_PROP_CRATE, x - 0.5, y - 1.0, z - 0.9, 0.0, 0.0, 0.0);
+	return 1;
+}
+
+stock Constructor_DestroyCart(playerid)
+{
+	if (gConstructorCart[playerid] != INVALID_OBJECT_ID)
+	{
+		DestroyObject(gConstructorCart[playerid]);
+		gConstructorCart[playerid] = INVALID_OBJECT_ID;
+	}
+	return 1;
+}
+
+// forwards not required here; definitions follow in this file
+public Constructor_UpdateCarts()
+{
+	for (new i = 0; i < MAX_PLAYERS; i++)
+	{
+		if (IsPlayerConnected(i) && gConstructorCart[i] != INVALID_OBJECT_ID)
+		{
+			new Float:x, y, z;
+			GetPlayerPos(i, x, y, z);
+			SetObjectPos(gConstructorCart[i], x - 0.5, y - 1.0, z - 0.9);
+		}
+	}
+	return 1;
+}
+
+// --- Cable car ride (simple teleport with animation)
+stock Constructor_RideCable(playerid, Float:destX, Float:destY, Float:destZ)
+{
+	if (!IsPlayerConnected(playerid)) return 0;
+	TogglePlayerControllable(playerid, false);
+	SendClientMessage(playerid, -1, "Du steigst in die Seilbahn. Zur Fahrt bitte warten...");
+	SetTimerEx("Constructor_FinishCableRide", 8000, false, "i", playerid); // 8 second ride
+	// store target in per-player buffer
+	gConstructorCableDestX[playerid] = destX;
+	gConstructorCableDestY[playerid] = destY;
+	gConstructorCableDestZ[playerid] = destZ;
+	return 1;
+}
+
+public Constructor_FinishCableRide(playerid)
+{
+	if (!IsPlayerConnected(playerid)) return 0;
+	SetPlayerPos(playerid, gConstructorCableDestX[playerid], gConstructorCableDestY[playerid], gConstructorCableDestZ[playerid] + 1.0);
+	TogglePlayerControllable(playerid, true);
+	SendClientMessage(playerid, -1, "Fahrt beendet.");
+	return 1;
+}
+
+// --- Actor damage handler for worker drops and bans ---
+// Wrapper matching the SA-MP include prototype. Calls the real handler below.
+public OnPlayerGiveDamageActor(playerid, damaged_actorid, Float:amount, weaponid, bodypart)
+{
+	return Constructor_OnPlayerGiveDamageActor(playerid, damaged_actorid, amount, weaponid, bodypart);
+}
+
+public Constructor_OnPlayerGiveDamageActor(playerid, actorid, Float:amount, weaponid, bodypart)
+{
+	for (new i = 0; i < sizeof(gConstructorActors); i++)
+	{
+		if (gConstructorActors[i] == actorid)
+		{
+			new Float:health;
+			GetActorHealth(actorid, health);
+			if (health <= 0.0)
+			{
+				new r = random(100);
+				if (r < 30)
+				{
+					new payout = 100 + random(400);
+					Economy_Payout(playerid, payout, "worker_loot");
+					SendClientMessage(playerid, -1, "Du hast etwas Geld gefunden.");
+				}
+				else if (r < 70)
+				{
+					if (random(2) == 0) { AddPlayerItem(playerid, ITEM_IRON_ORE, 1); SendClientMessage(playerid, -1, "Erz gefunden."); }
+					else { AddPlayerItem(playerid, ITEM_BAUXITE_ORE, 1); SendClientMessage(playerid, -1, "Bauxit gefunden."); }
+				}
+				else
+				{
+					GivePlayerWeapon(playerid, 24, 20);
+					SendClientMessage(playerid, -1, "Du hast eine Waffe gefunden. Vorsicht: Wanted!");
+				}
+				SetPlayerWantedLevel(playerid, 2);
+				gConstructorBannedUntil[playerid] = GetTickCount() + (30 * 60 * 1000);
+				SendClientMessage(playerid, -1, "Du wurdest vom Arbeitsbereich verbannt und bekommst Wanted.");
+				SetTimerEx("Constructor_RespawnActors", 5 * 60 * 1000, false, "");
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
+forward Constructor_RespawnActors();
+public Constructor_RespawnActors()
+{
+	Constructor_DestroyActors();
+	Constructor_CreateActors();
+	return 1;
+}
+
+// --- Test helper functions (server-side only) ---
+forward Constructor_Test_StartCharcoal(playerid);
+forward Constructor_Test_PickupCharcoal(playerid);
+forward Constructor_Test_MineOnce(playerid, bool:forceSuccess);
+forward Constructor_Test_StartSmelter(playerid);
+forward Constructor_Test_PickupSmelted(playerid);
+
+stock Constructor_Test_StartCharcoal(playerid)
+{
+	// Simulate placing wood into the shared charcoal oven (no range/connected checks)
+	if (PlayerItems[playerid][ITEM_WOOD_STACK] < 1) return 0;
+	RemovePlayerItem(playerid, ITEM_WOOD_STACK, 1);
+	gCharcoalOvenOccupied = true;
+	gCharcoalOvenReadyTick = GetTickCount() + CONSTRUCTOR_CHARCOAL_TIME_MS;
+	return 1;
+}
+
+stock Constructor_Test_PickupCharcoal(playerid)
+{
+	if (!(gCharcoalOvenOccupied && GetTickCount() >= gCharcoalOvenReadyTick)) return 0;
+	if (!CanPlayerCarryItem(playerid, ITEM_CHARCOAL, 1)) return -1;
+	gCharcoalOvenOccupied = false;
+	AddPlayerItem(playerid, ITEM_CHARCOAL, 1);
+	return 1;
+}
+
+stock Constructor_Test_MineOnce(playerid, bool:forceSuccess)
+{
+	// Ensure player has a pickaxe
+	if (PlayerItems[playerid][ITEM_PICKAXE] < 1)
+	{
+		AddPlayerItem(playerid, ITEM_PICKAXE, 1);
+	}
+	new success = (forceSuccess) ? 1 : (random(3) == 0);
+	if (!success) return 0;
+	new oreType = (random(2) == 0) ? ITEM_IRON_ORE : ITEM_BAUXITE_ORE;
+	if (!CanPlayerCarryItem(playerid, oreType, 1)) return -1;
+	AddPlayerItem(playerid, oreType, 1);
+	Constructor_CreateCart(playerid);
+	return oreType;
+}
+
+stock Constructor_Test_StartSmelter(playerid)
+{
+	new hasIron = PlayerItems[playerid][ITEM_IRON_ORE] > 0;
+	new hasBaux = PlayerItems[playerid][ITEM_BAUXITE_ORE] > 0;
+	if (!(hasIron || hasBaux) || PlayerItems[playerid][ITEM_CHARCOAL] < 1) return 0;
+	if (hasIron)
+	{
+		RemovePlayerItem(playerid, ITEM_IRON_ORE, 1);
+		gSmelterProduct = 1;
+	}
+	else
+	{
+		RemovePlayerItem(playerid, ITEM_BAUXITE_ORE, 1);
+		gSmelterProduct = 2;
+	}
+	RemovePlayerItem(playerid, ITEM_CHARCOAL, 1);
+	gSmelterOccupied = true;
+	gSmelterReadyTick = GetTickCount() + CONSTRUCTOR_SMELTER_TIME_MS;
+	return 1;
+}
+
+stock Constructor_Test_PickupSmelted(playerid)
+{
+	if (!(gSmelterOccupied && GetTickCount() >= gSmelterReadyTick)) return 0;
+	if (gSmelterProduct == 1)
+	{
+		if (!CanPlayerCarryItem(playerid, ITEM_IRON_INGOT, 1)) return -1;
+		AddPlayerItem(playerid, ITEM_IRON_INGOT, 1);
+	}
+	else if (gSmelterProduct == 2)
+	{
+		if (!CanPlayerCarryItem(playerid, ITEM_BAUXITE_INGOT, 1)) return -1;
+		AddPlayerItem(playerid, ITEM_BAUXITE_INGOT, 1);
+	}
+	gSmelterOccupied = false;
+	gSmelterProduct = 0;
+	return 1;
+}
+
+stock Constructor_CreateLabels()
+{
+	for (new i = 0; i < CONSTRUCTOR_LABEL_COUNT; i++)
+	{
+		gConstructorLabels[i] = Text3D:0;
+	}
+	for (new i = 0; i < sizeof(gConstructorLumberLabels); i++)
+	{
+		gConstructorLumberLabels[i] = Text3D:0;
+	}
+	for (new i = 0; i < sizeof(gConstructorMinerLabels); i++)
+	{
+		gConstructorMinerLabels[i] = Text3D:0;
+	}
+	for (new i = 0; i < sizeof(gConstructorOilLabels); i++)
+	{
+		gConstructorOilLabels[i] = Text3D:0;
+	}
+	for (new i = 0; i < sizeof(gConstructorVehicleLabels); i++)
+	{
+		gConstructorVehicleLabels[i] = Text3D:0;
+	}
+	gConstructorLabels[CONSTRUCTOR_LABEL_MAIN] = Create3DTextLabel("[Konstrukteur]\nArbeitsstart: Marker betreten", 0x4DD0E1FF, gConstructorStart[0], gConstructorStart[1], gConstructorStart[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_HUT] = Create3DTextLabel("[Konstrukteur]\nWerkzeug (N)", 0xFFD54FFF, gConstructorLumberHut[0], gConstructorLumberHut[1], gConstructorLumberHut[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_OVEN] = Create3DTextLabel("[Konstrukteur]\nKohle brennen (N)", 0xFFD54FFF, gConstructorCharcoalOven[0], gConstructorCharcoalOven[1], gConstructorCharcoalOven[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_QUARRY] = Create3DTextLabel("[Konstrukteur]\nGrubenausruestung (N)", 0xFFD54FFF, gConstructorQuarryGear[0], gConstructorQuarryGear[1], gConstructorQuarryGear[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_SMELTER] = Create3DTextLabel("[Konstrukteur]\nSchmelzen (N)", 0xFFD54FFF, gConstructorSmelter[0], gConstructorSmelter[1], gConstructorSmelter[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_OIL_CONTAINER] = Create3DTextLabel("[Konstrukteur]\nOelpumpe (N)", 0xFFD54FFF, gConstructorOilContainer[0], gConstructorOilContainer[1], gConstructorOilContainer[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_REFINERY] = Create3DTextLabel("[Konstrukteur]\nRaffinerie (N)", 0xFFD54FFF, gConstructorRefinery[0], gConstructorRefinery[1], gConstructorRefinery[2] + 0.7, 15.0, 0, 0);
+	gConstructorLabels[CONSTRUCTOR_LABEL_FACTORY] = Create3DTextLabel("[Konstrukteur]\nFabrik (N)", 0xFFD54FFF, gConstructorFactory[0], gConstructorFactory[1], gConstructorFactory[2] + 0.7, 15.0, 0, 0);
+	for (new i = 0; i < sizeof(gLumberSpots); i++)
+	{
+		gConstructorLumberLabels[i] = Create3DTextLabel("[Konstrukteur]\nHolz faellen (N)", 0xFFECB3FF, gLumberSpots[i][0], gLumberSpots[i][1], gLumberSpots[i][2] + 0.7, 15.0, 0, 0);
+	}
+	for (new i = 0; i < sizeof(gMinerSpots); i++)
+	{
+		gConstructorMinerLabels[i] = Create3DTextLabel("[Konstrukteur]\nErz abbauen (N)", 0xFFECB3FF, gMinerSpots[i][0], gMinerSpots[i][1], gMinerSpots[i][2] + 0.7, 15.0, 0, 0);
+	}
+	for (new i = 0; i < sizeof(gConstructorOilSpots); i++)
+	{
+		gConstructorOilLabels[i] = Create3DTextLabel("[Konstrukteur]\nOelfeld (N)", 0xFFECB3FF, gConstructorOilSpots[i][0], gConstructorOilSpots[i][1], gConstructorOilSpots[i][2] + 0.7, 15.0, 0, 0);
+	}
+	for (new i = 0; i < sizeof(gConstructorVehicleDrops); i++)
+	{
+		gConstructorVehicleLabels[i] = Create3DTextLabel("[Konstrukteur]\nFahrzeug abgeben (N)", 0xFFECB3FF, gConstructorVehicleDrops[i][0], gConstructorVehicleDrops[i][1], gConstructorVehicleDrops[i][2] + 0.7, 15.0, 0, 0);
+	}
+	return 1;
+}
+
+stock Constructor_DestroyLabels()
+{
+	for (new i = 0; i < CONSTRUCTOR_LABEL_COUNT; i++)
+	{
+		if (gConstructorLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(gConstructorLabels[i]);
+			gConstructorLabels[i] = Text3D:0;
+		}
+	}
+	for (new i = 0; i < sizeof(gConstructorLumberLabels); i++)
+	{
+		if (gConstructorLumberLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(gConstructorLumberLabels[i]);
+			gConstructorLumberLabels[i] = Text3D:0;
+		}
+	}
+	for (new i = 0; i < sizeof(gConstructorMinerLabels); i++)
+	{
+		if (gConstructorMinerLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(gConstructorMinerLabels[i]);
+			gConstructorMinerLabels[i] = Text3D:0;
+		}
+	}
+	for (new i = 0; i < sizeof(gConstructorOilLabels); i++)
+	{
+		if (gConstructorOilLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(gConstructorOilLabels[i]);
+			gConstructorOilLabels[i] = Text3D:0;
+		}
+	}
+	for (new i = 0; i < sizeof(gConstructorVehicleLabels); i++)
+	{
+		if (gConstructorVehicleLabels[i] != Text3D:0)
+		{
+			Delete3DTextLabel(gConstructorVehicleLabels[i]);
+			gConstructorVehicleLabels[i] = Text3D:0;
+		}
+	}
+	return 1;
+}
 
 stock Job_Init()
 {
@@ -135,6 +649,19 @@ stock Job_Init()
 		format(label, sizeof(label), "[%s]\nArbeitsstart: Marker betreten", gJobs[i][jobName]);
 		JobLabels[i] = Create3DTextLabel(label, 0x4DD0E1FF, gJobs[i][jobStartX], gJobs[i][jobStartY], gJobs[i][jobStartZ] + 0.7, 15.0, 0, 0);
 	}
+	// initialize shared processing stations
+	gCharcoalOvenOccupied = false;
+	gCharcoalOvenReadyTick = 0;
+	gSmelterOccupied = false;
+	gSmelterReadyTick = 0;
+	gSmelterProduct = 0;
+	// init cart objects
+	for (new i = 0; i < MAX_PLAYERS; i++) gConstructorCart[i] = INVALID_OBJECT_ID;
+	// create cable car pickups (top/bottom) - placed near the quarrygear and miner spots
+	gConstructorCablePickupTop = CreatePickup(1239, 1, gConstructorQuarryGear[0] + 1.5, gConstructorQuarryGear[1], gConstructorQuarryGear[2]);
+	gConstructorCablePickupBottom = CreatePickup(1239, 1, gMinerSpots[0][0], gMinerSpots[0][1], gMinerSpots[0][2]);
+	// start cart update timer
+	SetTimerEx("Constructor_UpdateCarts", 200, true, "");
 	return 1;
 }
 
@@ -438,21 +965,37 @@ stock bool:Constructor_OnKeyAction(playerid)
 				SendClientMessage(playerid, -1, "Du brauchst Holz fuer die Kohle.");
 				return true;
 			}
+			new now = GetTickCount();
+			// If oven has a ready batch, allow pickup (shared, not player-bound)
+			if (gCharcoalOvenOccupied && now >= gCharcoalOvenReadyTick)
+			{
+				if (!CanPlayerCarryItem(playerid, ITEM_CHARCOAL, 1))
+				{
+					ShowInventoryFullMessage(playerid, ITEM_CHARCOAL, 1);
+					return true;
+				}
+				gCharcoalOvenOccupied = false;
+				AddPlayerItem(playerid, ITEM_CHARCOAL, 1);
+				SendClientMessage(playerid, -1, "Kohle aufgenommen. Hol dir die Grubenausruestung.");
+				gJobStage[playerid] = 3;
+				Job_StartStage(playerid);
+				return true;
+			}
+			// If oven is busy and not ready, inform player
+			if (gCharcoalOvenOccupied && now < gCharcoalOvenReadyTick)
+			{
+				SendClientMessage(playerid, -1, "Der Ofen ist besetzt. Warte bis er fertig ist.");
+				return true;
+			}
+			// Start a new charcoal batch
 			if (!RemovePlayerItem(playerid, ITEM_WOOD_STACK, 1))
 			{
-				SendClientMessage(playerid, -1, "Du hast kein Holz.");
+				SendClientMessage(playerid, -1, "Fehler beim Einlegen des Holzes.");
 				return true;
 			}
-			if (!CanPlayerCarryItem(playerid, ITEM_CHARCOAL, 1))
-			{
-				ShowInventoryFullMessage(playerid, ITEM_CHARCOAL, 1);
-				AddPlayerItem(playerid, ITEM_WOOD_STACK, 1);
-				return true;
-			}
-			AddPlayerItem(playerid, ITEM_CHARCOAL, 1);
-			SendClientMessage(playerid, -1, "Kohle hergestellt. Hol dir die Grubenausruestung.");
-			gJobStage[playerid] = 3;
-			Job_StartStage(playerid);
+			gCharcoalOvenOccupied = true;
+			gCharcoalOvenReadyTick = now + CONSTRUCTOR_CHARCOAL_TIME_MS;
+			SendClientMessage(playerid, -1, "Holz eingelegt. Ofen gestartet (ca. 5 Minuten).");
 			return true;
 		}
 		case 3:
@@ -485,12 +1028,22 @@ stock bool:Constructor_OnKeyAction(playerid)
 			{
 				return false;
 			}
-			if (!CanPlayerCarryItem(playerid, ITEM_IRON_ORE, 1))
+			// 1 in 3 chance to find ore
+			if (random(3) != 0)
 			{
-				ShowInventoryFullMessage(playerid, ITEM_IRON_ORE, 1);
+				SendClientMessage(playerid, -1, "Kein Erz gefunden. Versuch es erneut.");
 				return true;
 			}
-			AddPlayerItem(playerid, ITEM_IRON_ORE, 1);
+			// Determine ore type: iron or bauxite
+			new oreType = (random(2) == 0) ? ITEM_IRON_ORE : ITEM_BAUXITE_ORE;
+			if (!CanPlayerCarryItem(playerid, oreType, 1))
+			{
+				ShowInventoryFullMessage(playerid, oreType, 1);
+				return true;
+			}
+			AddPlayerItem(playerid, oreType, 1);
+			// create a visual cart for the player
+			Constructor_CreateCart(playerid);
 			SendClientMessage(playerid, -1, "Erz gesammelt. Bringe es zum Hochofen.");
 			gJobStage[playerid] = 5;
 			Job_StartStage(playerid);
@@ -502,27 +1055,77 @@ stock bool:Constructor_OnKeyAction(playerid)
 			{
 				return false;
 			}
-			if (PlayerItems[playerid][ITEM_IRON_ORE] < 1 || PlayerItems[playerid][ITEM_CHARCOAL] < 1)
+			// Need ore (iron or bauxite) and charcoal
+			new hasIron = PlayerItems[playerid][ITEM_IRON_ORE] > 0;
+			new hasBaux = PlayerItems[playerid][ITEM_BAUXITE_ORE] > 0;
+			if (!(hasIron || hasBaux) || PlayerItems[playerid][ITEM_CHARCOAL] < 1)
 			{
 				SendClientMessage(playerid, -1, "Du brauchst Erz und Kohle.");
 				return true;
 			}
-			if (!RemovePlayerItem(playerid, ITEM_IRON_ORE, 1) || !RemovePlayerItem(playerid, ITEM_CHARCOAL, 1))
+			new now = GetTickCount();
+			// If smelter has a ready batch, allow pickup
+			if (gSmelterOccupied && now >= gSmelterReadyTick)
 			{
-				SendClientMessage(playerid, -1, "Material fehlt.");
+				if (gSmelterProduct == 1)
+				{
+					if (!CanPlayerCarryItem(playerid, ITEM_IRON_INGOT, 1)) { ShowInventoryFullMessage(playerid, ITEM_IRON_INGOT, 1); return true; }
+					gSmelterOccupied = false;
+					gSmelterProduct = 0;
+					AddPlayerItem(playerid, ITEM_IRON_INGOT, 1);
+					SendClientMessage(playerid, -1, "Eisenbarren aufgenommen. Waehle deinen Weg.");
+					gJobStage[playerid] = 6;
+					ShowPlayerDialog(playerid, DIALOG_CONSTRUCTOR_BRANCH, DIALOG_STYLE_LIST, "Konstrukteur", "Oel\nFahrzeug", "Waehlen", "Abbrechen");
+					return true;
+				}
+				else if (gSmelterProduct == 2)
+				{
+					if (!CanPlayerCarryItem(playerid, ITEM_BAUXITE_INGOT, 1)) { ShowInventoryFullMessage(playerid, ITEM_BAUXITE_INGOT, 1); return true; }
+					gSmelterOccupied = false;
+					gSmelterProduct = 0;
+					AddPlayerItem(playerid, ITEM_BAUXITE_INGOT, 1);
+					SendClientMessage(playerid, -1, "Aluminiumbarren aufgenommen. Waehle deinen Weg.");
+					gJobStage[playerid] = 6;
+					ShowPlayerDialog(playerid, DIALOG_CONSTRUCTOR_BRANCH, DIALOG_STYLE_LIST, "Konstrukteur", "Oel\nFahrzeug", "Waehlen", "Abbrechen");
+					return true;
+				}
+				// fallback
+				gSmelterOccupied = false;
+				gSmelterProduct = 0;
+				SendClientMessage(playerid, -1, "Das Ergebnis wurde bereits abgeholt.");
 				return true;
 			}
-			if (!CanPlayerCarryItem(playerid, ITEM_IRON_INGOT, 1))
+			// If smelter busy
+			if (gSmelterOccupied && now < gSmelterReadyTick)
 			{
-				ShowInventoryFullMessage(playerid, ITEM_IRON_INGOT, 1);
-				AddPlayerItem(playerid, ITEM_IRON_ORE, 1);
-				AddPlayerItem(playerid, ITEM_CHARCOAL, 1);
+				SendClientMessage(playerid, -1, "Der Hochofen ist besetzt. Warte bis er fertig ist.");
 				return true;
 			}
-			AddPlayerItem(playerid, ITEM_IRON_INGOT, 1);
-			SendClientMessage(playerid, -1, "Eisenbarren hergestellt. Waehle deinen Weg.");
-			gJobStage[playerid] = 6;
-			ShowPlayerDialog(playerid, DIALOG_CONSTRUCTOR_BRANCH, DIALOG_STYLE_LIST, "Konstrukteur", "Oel\nFahrzeug", "Waehlen", "Abbrechen");
+			// Start smelting using available ore
+			// remove visual cart when smelting starts
+			Constructor_DestroyCart(playerid);
+			if (hasIron)
+			{
+				if (!RemovePlayerItem(playerid, ITEM_IRON_ORE, 1) || !RemovePlayerItem(playerid, ITEM_CHARCOAL, 1))
+				{
+					SendClientMessage(playerid, -1, "Material fehlt.");
+					return true;
+				}
+				gSmelterProduct = 1; // iron
+			}
+			else if (hasBaux)
+			{
+				if (!RemovePlayerItem(playerid, ITEM_BAUXITE_ORE, 1) || !RemovePlayerItem(playerid, ITEM_CHARCOAL, 1))
+				{
+					SendClientMessage(playerid, -1, "Material fehlt.");
+					return true;
+				}
+				gSmelterProduct = 2; // bauxite -> aluminium
+			}
+			// occupy smelter and set ready tick
+			gSmelterOccupied = true;
+			gSmelterReadyTick = now + CONSTRUCTOR_SMELTER_TIME_MS;
+			SendClientMessage(playerid, -1, "Hochofen gestartet. Bitte kurz warten (~10s).");
 			return true;
 		}
 		case 7:
@@ -724,6 +1327,7 @@ stock Job_StartStage(playerid)
 			}
 			Job_SetCheckpoint(playerid, gJobs[jobid][jobStartX], gJobs[jobid][jobStartY], gJobs[jobid][jobStartZ]);
 			SendClientMessage(playerid, -1, "Liefere das Erz am Depot ab.");
+			return 1;
 		}
 		case JOB_LUMBER:
 		{
@@ -743,6 +1347,7 @@ stock Job_StartStage(playerid)
 			}
 			Job_SetCheckpoint(playerid, gJobs[jobid][jobStartX], gJobs[jobid][jobStartY], gJobs[jobid][jobStartZ]);
 			SendClientMessage(playerid, -1, "Bringe das Holz zur Saege.");
+			return 1;
 		}
 		case JOB_TRUCKER:
 		{
@@ -756,6 +1361,7 @@ stock Job_StartStage(playerid)
 			new idx = gJobTarget[playerid];
 			Job_SetCheckpoint(playerid, gTruckerDrop[idx][0], gTruckerDrop[idx][1], gTruckerDrop[idx][2]);
 			SendClientMessage(playerid, -1, "Liefere die Fracht ab.");
+			return 1;
 		}
 		case JOB_FISHER:
 		{
@@ -775,6 +1381,7 @@ stock Job_StartStage(playerid)
 			}
 			Job_SetCheckpoint(playerid, gJobs[jobid][jobStartX], gJobs[jobid][jobStartY], gJobs[jobid][jobStartZ]);
 			SendClientMessage(playerid, -1, "Bringe den Fang zum Markt.");
+			return 1;
 		}
 		case JOB_CONSTRUCTOR:
 		{
@@ -782,6 +1389,7 @@ stock Job_StartStage(playerid)
 			{
 				Job_SetCheckpoint(playerid, gConstructorLumberHut[0], gConstructorLumberHut[1], gConstructorLumberHut[2]);
 				SendClientMessage(playerid, -1, "Hol dir Werkzeug an der Huette.");
+				ShowConstructorHintIfGuided(playerid);
 				return 1;
 			}
 			if (gJobStage[playerid] == 1)
@@ -790,18 +1398,21 @@ stock Job_StartStage(playerid)
 				new idx = gJobTarget[playerid];
 				Job_SetCheckpoint(playerid, gLumberSpots[idx][0], gLumberSpots[idx][1], gLumberSpots[idx][2]);
 				SendClientMessage(playerid, -1, "Faelle Holz an der Markierung.");
+				ShowConstructorHintIfGuided(playerid);
 				return 1;
 			}
 			if (gJobStage[playerid] == 2)
 			{
 				Job_SetCheckpoint(playerid, gConstructorCharcoalOven[0], gConstructorCharcoalOven[1], gConstructorCharcoalOven[2]);
 				SendClientMessage(playerid, -1, "Brenne Holz zu Kohle.");
+				ShowConstructorHintIfGuided(playerid);
 				return 1;
 			}
 			if (gJobStage[playerid] == 3)
 			{
 				Job_SetCheckpoint(playerid, gConstructorQuarryGear[0], gConstructorQuarryGear[1], gConstructorQuarryGear[2]);
 				SendClientMessage(playerid, -1, "Hol dir die Grubenausruestung.");
+				ShowConstructorHintIfGuided(playerid);
 				return 1;
 			}
 			if (gJobStage[playerid] == 4)
@@ -907,6 +1518,8 @@ stock Job_Cancel(playerid, bool:notify)
 	gConstructorBranch[playerid] = CONSTRUCTOR_BRANCH_NONE;
 	gConstructorPumpReadyTick[playerid] = 0;
 	gConstructorPumpPlaced[playerid] = false;
+	// destroy any visual cart
+	Constructor_DestroyCart(playerid);
 	gJobActive[playerid] = JOB_NONE;
 	gJobStage[playerid] = 0;
 	gJobTarget[playerid] = -1;
@@ -935,6 +1548,12 @@ stock Job_Start(playerid, jobid)
 	if (gJobLevel[playerid][jobid] < minLevel)
 	{
 		SendClientMessage(playerid, -1, "Du erfuellst die Level-Anforderung nicht.");
+		return 0;
+	}
+	// constructor ban check
+	if (jobid == JOB_CONSTRUCTOR && gConstructorBannedUntil[playerid] > GetTickCount())
+	{
+		SendClientMessage(playerid, -1, "Du wurdest voruebergehend vom Konstruktionsbereich verbannt.");
 		return 0;
 	}
 	gJobActive[playerid] = jobid;
@@ -971,6 +1590,13 @@ stock bool:Job_OnPlayerCommandText(playerid, const cmdtext[])
 			}
 		}
 		SendClientMessage(playerid, -1, "Sprich mit dem Vorarbeiter am Job-Punkt.");
+		return true;
+	}
+	if (!strcmp(cmd, "/guide", true))
+	{
+		gGuidedMode[playerid] ^= 1;
+		if (gGuidedMode[playerid]) SendClientMessage(playerid, -1, "Guide aktiviert: Du bekommst einfache Schritt-fuer-Schritt Hinweise.");
+		else SendClientMessage(playerid, -1, "Guide deaktiviert.");
 		return true;
 	}
 	if (!strcmp(cmd, "/jobdaily", true) || !strcmp(cmd, "/tagesziel", true))
@@ -1079,6 +1705,18 @@ stock bool:Job_OnDialogResponse(playerid, dialogid, response, listitem, inputtex
 
 stock bool:Job_OnPlayerPickUpPickup(playerid, pickupid)
 {
+	// Cable car pickups
+	if (pickupid == gConstructorCablePickupTop)
+	{
+		Constructor_RideCable(playerid, gMinerSpots[0][0], gMinerSpots[0][1], gMinerSpots[0][2]);
+		return true;
+	}
+	if (pickupid == gConstructorCablePickupBottom)
+	{
+		Constructor_RideCable(playerid, gConstructorQuarryGear[0], gConstructorQuarryGear[1], gConstructorQuarryGear[2]);
+		return true;
+	}
+
 	for (new i = 0; i < MAX_JOBS; i++)
 	{
 		if (pickupid == JobPickups[i])
