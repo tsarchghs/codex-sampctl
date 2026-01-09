@@ -27,6 +27,7 @@
 #define DIALOG_TUTORIAL       17
 #define DIALOG_PHONE          18
 #define DIALOG_STATUS         19
+#define DIALOG_ITEM_SHORTCUT  20
 #define DIALOG_MAP            2300
 #define DIALOG_GPS            2301
 
@@ -101,7 +102,7 @@
 #define TAXI_DAMAGE_FEE 250
 #define TAXI_METER_RATE_MS 60000
 
-#define MAX_ITEMS 21
+#define MAX_ITEMS 25
 #define MAX_DROPS 100
 #define MAX_ITEM_NAME 24
 #define STORE_PRICE_NONE -1
@@ -110,6 +111,8 @@
 #define ACTIVITY_DELIVERY (1 << 2)
 #define ACTIVITY_DMV (1 << 3)
 #define ACTIVITY_BONUS_AMOUNT 500
+
+#define MAX_ITEM_SHORTCUTS 5
 
 #define CINEMA_SCREEN_MODEL 18880
 #define CINEMA_SEAT_MODEL_1 1723
@@ -578,6 +581,10 @@ stock Float:GetPlayerDistanceFromPlayer(playerid, targetid)
 #define ITEM_FUEL_CAN 18
 #define ITEM_COPPER_WIRE 19
 #define ITEM_CRATE 20
+#define ITEM_CHARCOAL 21
+#define ITEM_IRON_INGOT 22
+#define ITEM_BAUXITE_INGOT 23
+#define ITEM_OIL_BARREL 24
 
 enum itemInfo
 {
@@ -609,11 +616,16 @@ new const gItems[MAX_ITEMS][itemInfo] =
 	{"Werkzeugkoffer", false, 3, false},
 	{"Kraftstoffkanister", false, 4, false},
 	{"Kupferkabel", false, 2, true},
-	{"Kiste", false, 1, false}
+	{"Kiste", false, 1, false},
+	{"Kohle", false, 2, false},
+	{"Eisenbarren", false, 4, false},
+	{"Bauxitbarren", false, 4, false},
+	{"Oelfass", false, 6, false}
 };
 
 new PlayerItems[MAX_PLAYERS][MAX_ITEMS];
 new VehicleItems[MAX_VEHICLES][MAX_ITEMS];
+new gItemShortcuts[MAX_PLAYERS][MAX_ITEM_SHORTCUTS];
 
 enum dropInfo
 {
@@ -637,7 +649,8 @@ enum invAction
 	ACTION_DROP,
 	ACTION_DELETE,
 	ACTION_GIVE,
-	ACTION_VEH_TAKE
+	ACTION_VEH_TAKE,
+	ACTION_SHORTCUT
 };
 
 stock GetItemName(itemid, name[], size = MAX_ITEM_NAME)
@@ -1479,6 +1492,10 @@ stock ResetPlayerData(playerid)
 	for (new i = 0; i < MAX_ITEMS; i++)
 	{
 		PlayerItems[playerid][i] = 0;
+	}
+	for (new i = 0; i < MAX_ITEM_SHORTCUTS; i++)
+	{
+		gItemShortcuts[playerid][i] = -1;
 	}
 	gAlprEnabled[playerid] = false;
 	gHasLicense[playerid] = true;
@@ -2781,6 +2798,7 @@ stock Law_LogRecord(officerid, targetid, const event[], const detail[])
 #include "include/rp_jobs.inc"
 #include "include/rp_factions.inc"
 #include "include/rp_map.inc"
+#include "tests/konstruktor_tests.pwn"
 
 stock ShowStatusDialog(playerid)
 {
@@ -3414,6 +3432,18 @@ public OnGameModeInit()
 	SetTimer("FactionSalaryTick", FACTION_SALARY_TICK_MS, true);
 	SetTimer("CrimeTick", 60000, true);
 	SetTimer("AutoSaveTick", AUTO_SAVE_INTERVAL_MS, true);
+
+	// Auto-run konstruktor tests if trigger file exists
+	new testTriggerPath[64];
+	format(testTriggerPath, sizeof(testTriggerPath), "tests/run_konstruktor_tests");
+	new File:h = fopen(testTriggerPath, io_read);
+	if (h != 0)
+	{
+		fclose(h);
+		printf("[TEST] Found trigger file; running konstruktor tests...");
+		RunKonstruktorTests();
+	}
+
 	for (new i = 0; i < MAX_DROPS; i++)
 	{
 		Drops[i][dropActive] = false;
@@ -3676,6 +3706,10 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 
 	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
 	{
+		if (Constructor_OnKeyAction(playerid))
+		{
+			return 1;
+		}
 		new dropid = GetNearestActiveDrop(playerid);
 		if (dropid != -1)
 		{
@@ -4062,11 +4096,11 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new options[96];
 		if (gItems[itemid][itemConsumable])
 		{
-			format(options, sizeof(options), "Benutzen\nFallenlassen\nGeben\nWegwerfen");
+			format(options, sizeof(options), "Benutzen\nFallenlassen\nGeben\nWegwerfen\nShortcut");
 		}
 		else
 		{
-			format(options, sizeof(options), "Fallenlassen\nGeben\nWegwerfen");
+			format(options, sizeof(options), "Fallenlassen\nGeben\nWegwerfen\nShortcut");
 		}
 		ShowPlayerDialog(playerid, DIALOG_ITEM_ACTIONS, DIALOG_STYLE_LIST, "Gegenstaende", options, "Waehlen", "Zurueck");
 		return 1;
@@ -4093,12 +4127,14 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			else if (listitem == 1) action = ACTION_DROP;
 			else if (listitem == 2) action = ACTION_GIVE;
 			else if (listitem == 3) action = ACTION_DELETE;
+			else if (listitem == 4) action = ACTION_SHORTCUT;
 		}
 		else
 		{
 			if (listitem == 0) action = ACTION_DROP;
 			else if (listitem == 1) action = ACTION_GIVE;
 			else if (listitem == 2) action = ACTION_DELETE;
+			else if (listitem == 3) action = ACTION_SHORTCUT;
 		}
 
 		PlayerData[playerid][pSelectedAction] = action;
@@ -4128,11 +4164,42 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			return 1;
 		}
 
+		if (action == ACTION_SHORTCUT)
+		{
+			ShowPlayerDialog(playerid, DIALOG_ITEM_SHORTCUT, DIALOG_STYLE_LIST, "Shortcut setzen", "Slot 1\nSlot 2\nSlot 3\nSlot 4\nSlot 5", "Setzen", "Abbrechen");
+			return 1;
+		}
+
 		if (action == ACTION_DROP || action == ACTION_DELETE)
 		{
 			ShowPlayerDialog(playerid, DIALOG_ITEM_AMOUNT, DIALOG_STYLE_INPUT, "Menge", "Eingabe: menge", "OK", "Abbrechen");
 			return 1;
 		}
+	}
+
+	if (dialogid == DIALOG_ITEM_SHORTCUT)
+	{
+		if (!response)
+		{
+			ShowInventoryDialog(playerid);
+			return 1;
+		}
+		if (listitem < 0 || listitem >= MAX_ITEM_SHORTCUTS)
+		{
+			return 1;
+		}
+		new itemid = PlayerData[playerid][pSelectedItem];
+		if (!IsValidItem(itemid))
+		{
+			return 1;
+		}
+		gItemShortcuts[playerid][listitem] = itemid;
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Shortcut %d gesetzt: %s.", listitem + 1, itemName);
+		SendClientMessage(playerid, -1, message);
+		return 1;
 	}
 
 	if (dialogid == DIALOG_ITEM_AMOUNT)
@@ -5096,6 +5163,216 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		return 1;
 	}
 
+	if (!strcmp(cmd, "/tpkonstructor", true) || !strcmp(cmd, "/tpkonstrukteur", true) || !strcmp(cmd, "/tpconstructor", true) || !strcmp(cmd, "/tpkon", true))
+	{
+		new arg[64];
+		arg = strtok(cmdtext, idx);
+		if (!strlen(arg))
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /tpkonstructor <start|hut|oven|quarry|smelter|oil|refinery|factory|lumber1-3|miner1-3|oil1-3|veh1-3>");
+			return 1;
+		}
+		new Float:x, Float:y, Float:z;
+		new bool:found = true;
+		if (!strcmp(arg, "start", true))
+		{
+			x = gConstructorStart[0];
+			y = gConstructorStart[1];
+			z = gConstructorStart[2];
+		}
+		else if (!strcmp(arg, "hut", true))
+		{
+			x = gConstructorLumberHut[0];
+			y = gConstructorLumberHut[1];
+			z = gConstructorLumberHut[2];
+		}
+		else if (!strcmp(arg, "oven", true))
+		{
+			x = gConstructorCharcoalOven[0];
+			y = gConstructorCharcoalOven[1];
+			z = gConstructorCharcoalOven[2];
+		}
+		else if (!strcmp(arg, "quarry", true))
+		{
+			x = gConstructorQuarryGear[0];
+			y = gConstructorQuarryGear[1];
+			z = gConstructorQuarryGear[2];
+		}
+		else if (!strcmp(arg, "smelter", true))
+		{
+			x = gConstructorSmelter[0];
+			y = gConstructorSmelter[1];
+			z = gConstructorSmelter[2];
+		}
+		else if (!strcmp(arg, "oil", true))
+		{
+			x = gConstructorOilContainer[0];
+			y = gConstructorOilContainer[1];
+			z = gConstructorOilContainer[2];
+		}
+		else if (!strcmp(arg, "refinery", true))
+		{
+			x = gConstructorRefinery[0];
+			y = gConstructorRefinery[1];
+			z = gConstructorRefinery[2];
+		}
+		else if (!strcmp(arg, "factory", true))
+		{
+			x = gConstructorFactory[0];
+			y = gConstructorFactory[1];
+			z = gConstructorFactory[2];
+		}
+		else if (!strcmp(arg, "lumber1", true))
+		{
+			x = gLumberSpots[0][0];
+			y = gLumberSpots[0][1];
+			z = gLumberSpots[0][2];
+		}
+		else if (!strcmp(arg, "lumber2", true))
+		{
+			x = gLumberSpots[1][0];
+			y = gLumberSpots[1][1];
+			z = gLumberSpots[1][2];
+		}
+		else if (!strcmp(arg, "lumber3", true))
+		{
+			x = gLumberSpots[2][0];
+			y = gLumberSpots[2][1];
+			z = gLumberSpots[2][2];
+		}
+		else if (!strcmp(arg, "miner1", true))
+		{
+			x = gMinerSpots[0][0];
+			y = gMinerSpots[0][1];
+			z = gMinerSpots[0][2];
+		}
+		else if (!strcmp(arg, "miner2", true))
+		{
+			x = gMinerSpots[1][0];
+			y = gMinerSpots[1][1];
+			z = gMinerSpots[1][2];
+		}
+		else if (!strcmp(arg, "miner3", true))
+		{
+			x = gMinerSpots[2][0];
+			y = gMinerSpots[2][1];
+			z = gMinerSpots[2][2];
+		}
+		else if (!strcmp(arg, "oil1", true))
+		{
+			x = gConstructorOilSpots[0][0];
+			y = gConstructorOilSpots[0][1];
+			z = gConstructorOilSpots[0][2];
+		}
+		else if (!strcmp(arg, "oil2", true))
+		{
+			x = gConstructorOilSpots[1][0];
+			y = gConstructorOilSpots[1][1];
+			z = gConstructorOilSpots[1][2];
+		}
+		else if (!strcmp(arg, "oil3", true))
+		{
+			x = gConstructorOilSpots[2][0];
+			y = gConstructorOilSpots[2][1];
+			z = gConstructorOilSpots[2][2];
+		}
+		else if (!strcmp(arg, "veh1", true))
+		{
+			x = gConstructorVehicleDrops[0][0];
+			y = gConstructorVehicleDrops[0][1];
+			z = gConstructorVehicleDrops[0][2];
+		}
+		else if (!strcmp(arg, "veh2", true))
+		{
+			x = gConstructorVehicleDrops[1][0];
+			y = gConstructorVehicleDrops[1][1];
+			z = gConstructorVehicleDrops[1][2];
+		}
+		else if (!strcmp(arg, "veh3", true))
+		{
+			x = gConstructorVehicleDrops[2][0];
+			y = gConstructorVehicleDrops[2][1];
+			z = gConstructorVehicleDrops[2][2];
+		}
+		else
+		{
+			found = false;
+		}
+		if (!found)
+		{
+			SendClientMessage(playerid, -1, "Unbekanntes Ziel. Beispiel: /tpkonstructor start");
+			return 1;
+		}
+		new vehicleid = GetPlayerVehicleID(playerid);
+		if (vehicleid != 0)
+		{
+			new Float:a;
+			GetVehicleZAngle(vehicleid, a);
+			SetVehiclePos(vehicleid, x, y, z + 0.5);
+			SetVehicleZAngle(vehicleid, a);
+		}
+		else
+		{
+			SetPlayerPos(playerid, x, y, z);
+		}
+		SendClientMessage(playerid, -1, "Teleportiert zum Konstrukteur-Punkt.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/startconstructor", true) || !strcmp(cmd, "/startkonstrukteur", true))
+	{
+		if (gJobActive[playerid] != JOB_NONE)
+		{
+			Job_Cancel(playerid, true);
+		}
+		gJobActive[playerid] = JOB_CONSTRUCTOR;
+		gJobStage[playerid] = 0;
+		gJobTarget[playerid] = -1;
+		gJobSelected[playerid] = JOB_CONSTRUCTOR;
+		gConstructorBranch[playerid] = CONSTRUCTOR_BRANCH_NONE;
+		gConstructorPumpReadyTick[playerid] = 0;
+		gConstructorPumpPlaced[playerid] = false;
+		Job_StartStage(playerid);
+		SendClientMessage(playerid, -1, "Konstrukteur gestartet. Folge dem Marker und druecke N.");
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/jobstage", true) || !strcmp(cmd, "/konstage", true))
+	{
+		new stageArg[64];
+		stageArg = strtok(cmdtext, idx);
+		if (!strlen(stageArg))
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /jobstage <0-12>");
+			return 1;
+		}
+		new stage = strval(stageArg);
+		if (stage < 0 || stage > 12)
+		{
+			SendClientMessage(playerid, -1, "Stage muss zwischen 0 und 12 liegen.");
+			return 1;
+		}
+		if (gJobActive[playerid] != JOB_CONSTRUCTOR)
+		{
+			gJobActive[playerid] = JOB_CONSTRUCTOR;
+			gConstructorBranch[playerid] = CONSTRUCTOR_BRANCH_NONE;
+			gConstructorPumpReadyTick[playerid] = 0;
+			gConstructorPumpPlaced[playerid] = false;
+		}
+		gJobStage[playerid] = stage;
+		gJobTarget[playerid] = -1;
+		if (stage == 6)
+		{
+			ShowPlayerDialog(playerid, DIALOG_CONSTRUCTOR_BRANCH, DIALOG_STYLE_LIST, "Konstrukteur", "Oel\nFahrzeug", "Waehlen", "Abbrechen");
+		}
+		else
+		{
+			Job_StartStage(playerid);
+		}
+		SendClientMessage(playerid, -1, "Konstrukteur-Stage gesetzt.");
+		return 1;
+	}
+
 	if (!strcmp(cmd, "/stats", true))
 	{
 		new msg[144];
@@ -5302,6 +5579,54 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
 		format(message, sizeof(message), "Du hast %s benutzt.", itemName);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/item", true))
+	{
+		new slotArg[64];
+		slotArg = strtok(cmdtext, idx);
+		new slot = strval(slotArg);
+		if (slot < 1 || slot > MAX_ITEM_SHORTCUTS)
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /item <slot>");
+			return 1;
+		}
+		new itemid = gItemShortcuts[playerid][slot - 1];
+		if (!IsValidItem(itemid))
+		{
+			SendClientMessage(playerid, -1, "Kein Shortcut auf diesem Slot.");
+			return 1;
+		}
+		if (PlayerItems[playerid][itemid] < 1)
+		{
+			SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+			return 1;
+		}
+		if (gItems[itemid][itemConsumable])
+		{
+			if (!RemovePlayerItem(playerid, itemid, 1))
+			{
+				SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+				return 1;
+			}
+			if (!UseInventoryItem(playerid, itemid))
+			{
+				SendClientMessage(playerid, -1, "Nichts passiert.");
+				return 1;
+			}
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new message[96];
+			format(message, sizeof(message), "Du hast %s benutzt.", itemName);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Du hast %s aus dem Inventar genommen.", itemName);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
@@ -6722,6 +7047,7 @@ public OnPlayerCommandText(playerid, cmdtext[])
 				TaxiRentalVehicle[playerid] = CreateVehicle(420, x + 2.0, y, z, a, -1, -1, 0);
 				InitVehiclePlate(TaxiRentalVehicle[playerid]);
 				PutPlayerInVehicle(playerid, TaxiRentalVehicle[playerid], 0);
+				
 			}
 			new message[64];
 			format(message, sizeof(message), "Taxi rented for %d minutes. Cost: $%d.", TAXI_RENTAL_MINUTES, TAXI_RENTAL_COST);
