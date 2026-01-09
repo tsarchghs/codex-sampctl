@@ -27,6 +27,7 @@
 #define DIALOG_TUTORIAL       17
 #define DIALOG_PHONE          18
 #define DIALOG_STATUS         19
+#define DIALOG_ITEM_SHORTCUT  20
 #define DIALOG_MAP            2300
 #define DIALOG_GPS            2301
 
@@ -102,7 +103,7 @@
 #define TAXI_DAMAGE_FEE 250
 #define TAXI_METER_RATE_MS 60000
 
-#define MAX_ITEMS 21
+#define MAX_ITEMS 28
 #define MAX_DROPS 100
 #define MAX_ITEM_NAME 24
 #define STORE_PRICE_NONE -1
@@ -111,6 +112,8 @@
 #define ACTIVITY_DELIVERY (1 << 2)
 #define ACTIVITY_DMV (1 << 3)
 #define ACTIVITY_BONUS_AMOUNT 500
+
+#define MAX_ITEM_SHORTCUTS 5
 
 #define CINEMA_SCREEN_MODEL 18880
 #define CINEMA_SEAT_MODEL_1 1723
@@ -568,6 +571,13 @@ stock Float:GetPlayerDistanceFromPlayer(playerid, targetid)
 #define ITEM_FUEL_CAN 18
 #define ITEM_COPPER_WIRE 19
 #define ITEM_CRATE 20
+#define ITEM_CHAINSAW 21
+#define ITEM_SLEDGEHAMMER 22
+#define ITEM_SAFETY_VEST 23
+#define ITEM_COAL 24
+#define ITEM_BAUXITE_ORE 25
+#define ITEM_IRON 26
+#define ITEM_ALUMINUM 27
 
 enum itemInfo
 {
@@ -599,11 +609,19 @@ new const gItems[MAX_ITEMS][itemInfo] =
 	{"Werkzeugkoffer", false, 3, false},
 	{"Kraftstoffkanister", false, 4, false},
 	{"Kupferkabel", false, 2, true},
-	{"Kiste", false, 1, false}
+	{"Kiste", false, 1, false},
+	{"Kettensaege", false, 5, false},
+	{"Vorschlaghammer", false, 5, false},
+	{"Warnweste", false, 1, false},
+	{"Kohle", false, 2, false},
+	{"Bauxit", false, 4, false},
+	{"Eisen", false, 4, false},
+	{"Aluminium", false, 3, false}
 };
 
 new PlayerItems[MAX_PLAYERS][MAX_ITEMS];
 new VehicleItems[MAX_VEHICLES][MAX_ITEMS];
+new gItemShortcuts[MAX_PLAYERS][MAX_ITEM_SHORTCUTS];
 
 enum dropInfo
 {
@@ -627,7 +645,8 @@ enum invAction
 	ACTION_DROP,
 	ACTION_DELETE,
 	ACTION_GIVE,
-	ACTION_VEH_TAKE
+	ACTION_VEH_TAKE,
+	ACTION_SHORTCUT
 };
 
 stock GetItemName(itemid, name[], size = MAX_ITEM_NAME)
@@ -1476,6 +1495,10 @@ stock ResetPlayerData(playerid)
 	for (new i = 0; i < MAX_ITEMS; i++)
 	{
 		PlayerItems[playerid][i] = 0;
+	}
+	for (new i = 0; i < MAX_ITEM_SHORTCUTS; i++)
+	{
+		gItemShortcuts[playerid][i] = -1;
 	}
 	gAlprEnabled[playerid] = false;
 	gHasLicense[playerid] = true;
@@ -3698,6 +3721,14 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 		return 1;
 	}
 
+	if ((newkeys & KEY_ACTION) && !(oldkeys & KEY_ACTION))
+	{
+		if (Constructor_OnKeyAction(playerid))
+		{
+			return 1;
+		}
+	}
+
 	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
 	{
 		new dropid = GetNearestActiveDrop(playerid);
@@ -4086,11 +4117,11 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 		new options[96];
 		if (gItems[itemid][itemConsumable])
 		{
-			format(options, sizeof(options), "Benutzen\nFallenlassen\nGeben\nWegwerfen");
+			format(options, sizeof(options), "Benutzen\nFallenlassen\nGeben\nWegwerfen\nShortcut");
 		}
 		else
 		{
-			format(options, sizeof(options), "Fallenlassen\nGeben\nWegwerfen");
+			format(options, sizeof(options), "Fallenlassen\nGeben\nWegwerfen\nShortcut");
 		}
 		ShowPlayerDialog(playerid, DIALOG_ITEM_ACTIONS, DIALOG_STYLE_LIST, "Gegenstaende", options, "Waehlen", "Zurueck");
 		return 1;
@@ -4117,12 +4148,14 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			else if (listitem == 1) action = ACTION_DROP;
 			else if (listitem == 2) action = ACTION_GIVE;
 			else if (listitem == 3) action = ACTION_DELETE;
+			else if (listitem == 4) action = ACTION_SHORTCUT;
 		}
 		else
 		{
 			if (listitem == 0) action = ACTION_DROP;
 			else if (listitem == 1) action = ACTION_GIVE;
 			else if (listitem == 2) action = ACTION_DELETE;
+			else if (listitem == 3) action = ACTION_SHORTCUT;
 		}
 
 		PlayerData[playerid][pSelectedAction] = action;
@@ -4152,11 +4185,42 @@ public OnDialogResponse(playerid, dialogid, response, listitem, inputtext[])
 			return 1;
 		}
 
+		if (action == ACTION_SHORTCUT)
+		{
+			ShowPlayerDialog(playerid, DIALOG_ITEM_SHORTCUT, DIALOG_STYLE_LIST, "Shortcut setzen", "Slot 1\nSlot 2\nSlot 3\nSlot 4\nSlot 5", "Setzen", "Abbrechen");
+			return 1;
+		}
+
 		if (action == ACTION_DROP || action == ACTION_DELETE)
 		{
 			ShowPlayerDialog(playerid, DIALOG_ITEM_AMOUNT, DIALOG_STYLE_INPUT, "Menge", "Eingabe: menge", "OK", "Abbrechen");
 			return 1;
 		}
+	}
+
+	if (dialogid == DIALOG_ITEM_SHORTCUT)
+	{
+		if (!response)
+		{
+			ShowInventoryDialog(playerid);
+			return 1;
+		}
+		if (listitem < 0 || listitem >= MAX_ITEM_SHORTCUTS)
+		{
+			return 1;
+		}
+		new itemid = PlayerData[playerid][pSelectedItem];
+		if (!IsValidItem(itemid))
+		{
+			return 1;
+		}
+		gItemShortcuts[playerid][listitem] = itemid;
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Shortcut %d gesetzt: %s.", listitem + 1, itemName);
+		SendClientMessage(playerid, -1, message);
+		return 1;
 	}
 
 	if (dialogid == DIALOG_ITEM_AMOUNT)
@@ -5345,6 +5409,54 @@ public OnPlayerCommandText(playerid, cmdtext[])
 		GetItemName(itemid, itemName, sizeof(itemName));
 		new message[96];
 		format(message, sizeof(message), "Du hast %s benutzt.", itemName);
+		SendClientMessage(playerid, -1, message);
+		return 1;
+	}
+
+	if (!strcmp(cmd, "/item", true))
+	{
+		new slotArg[16];
+		slotArg = strtok(cmdtext, idx);
+		new slot = strval(slotArg);
+		if (slot < 1 || slot > MAX_ITEM_SHORTCUTS)
+		{
+			SendClientMessage(playerid, -1, "Eingabe: /item <slot>");
+			return 1;
+		}
+		new itemid = gItemShortcuts[playerid][slot - 1];
+		if (!IsValidItem(itemid))
+		{
+			SendClientMessage(playerid, -1, "Kein Shortcut auf diesem Slot.");
+			return 1;
+		}
+		if (PlayerItems[playerid][itemid] < 1)
+		{
+			SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+			return 1;
+		}
+		if (gItems[itemid][itemConsumable])
+		{
+			if (!RemovePlayerItem(playerid, itemid, 1))
+			{
+				SendClientMessage(playerid, -1, "Du hast diesen Gegenstand nicht.");
+				return 1;
+			}
+			if (!UseInventoryItem(playerid, itemid))
+			{
+				SendClientMessage(playerid, -1, "Nichts passiert.");
+				return 1;
+			}
+			new itemName[MAX_ITEM_NAME];
+			GetItemName(itemid, itemName, sizeof(itemName));
+			new message[96];
+			format(message, sizeof(message), "Du hast %s benutzt.", itemName);
+			SendClientMessage(playerid, -1, message);
+			return 1;
+		}
+		new itemName[MAX_ITEM_NAME];
+		GetItemName(itemid, itemName, sizeof(itemName));
+		new message[96];
+		format(message, sizeof(message), "Du hast %s aus dem Inventar genommen.", itemName);
 		SendClientMessage(playerid, -1, message);
 		return 1;
 	}
