@@ -103,7 +103,7 @@
 #define TAXI_DAMAGE_FEE 250
 #define TAXI_METER_RATE_MS 60000
 
-#define MAX_ITEMS 28
+#define MAX_ITEMS 25
 #define MAX_DROPS 100
 #define MAX_ITEM_NAME 24
 #define STORE_PRICE_NONE -1
@@ -571,13 +571,10 @@ stock Float:GetPlayerDistanceFromPlayer(playerid, targetid)
 #define ITEM_FUEL_CAN 18
 #define ITEM_COPPER_WIRE 19
 #define ITEM_CRATE 20
-#define ITEM_CHAINSAW 21
-#define ITEM_SLEDGEHAMMER 22
-#define ITEM_SAFETY_VEST 23
-#define ITEM_COAL 24
-#define ITEM_BAUXITE_ORE 25
-#define ITEM_IRON 26
-#define ITEM_ALUMINUM 27
+#define ITEM_CHARCOAL 21
+#define ITEM_IRON_INGOT 22
+#define ITEM_BAUXITE_INGOT 23
+#define ITEM_OIL_BARREL 24
 
 enum itemInfo
 {
@@ -610,13 +607,10 @@ new const gItems[MAX_ITEMS][itemInfo] =
 	{"Kraftstoffkanister", false, 4, false},
 	{"Kupferkabel", false, 2, true},
 	{"Kiste", false, 1, false},
-	{"Kettensaege", false, 5, false},
-	{"Vorschlaghammer", false, 5, false},
-	{"Warnweste", false, 1, false},
 	{"Kohle", false, 2, false},
-	{"Bauxit", false, 4, false},
-	{"Eisen", false, 4, false},
-	{"Aluminium", false, 3, false}
+	{"Eisenbarren", false, 4, false},
+	{"Bauxitbarren", false, 4, false},
+	{"Oelfass", false, 6, false}
 };
 
 new PlayerItems[MAX_PLAYERS][MAX_ITEMS];
@@ -3721,16 +3715,12 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 		return 1;
 	}
 
-	if ((newkeys & KEY_ACTION) && !(oldkeys & KEY_ACTION))
+	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
 	{
 		if (Constructor_OnKeyAction(playerid))
 		{
 			return 1;
 		}
-	}
-
-	if ((newkeys & KEY_YES) && !(oldkeys & KEY_YES))
-	{
 		new dropid = GetNearestActiveDrop(playerid);
 		if (dropid != -1)
 		{
